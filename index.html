@@ -37,11 +37,16 @@
   .dial-wrap{position:relative; width:min(78vw,300px); aspect-ratio:1/0.62; margin-top:8px;}
   svg.dial{width:100%; height:100%; display:block;}
   .needle{transform-origin:150px 150px; transition:transform 1.1s cubic-bezier(.22,1,.36,1);}
-  .dial-readout{position:absolute; left:0; right:0; bottom:2%; text-align:center;}
+
+  /* readout now sits BELOW the gauge, in normal document flow, so the needle never overlaps it */
+  .dial-readout{margin-top:14px; text-align:center; max-width:300px;}
   .dial-num{font-family:'JetBrains Mono',monospace; font-size:44px; font-weight:800; line-height:1;}
   .dial-label{font-size:11px; color:var(--muted); letter-spacing:.14em; text-transform:uppercase; margin-top:2px;}
-  .dial-flag{font-family:'JetBrains Mono',monospace; font-size:12px; margin-top:8px; padding:4px 12px;
+  .dial-flag{font-family:'JetBrains Mono',monospace; font-size:12px; margin-top:10px; padding:4px 12px;
     border-radius:20px; display:inline-block; border:1px solid currentColor;}
+  .dial-prescription{font-size:12.5px; color:var(--muted); margin-top:8px; line-height:1.45;}
+  .dial-breakdown{font-size:11px; color:var(--muted); margin-top:10px; line-height:1.6;
+    font-family:'JetBrains Mono',monospace;}
 
   .section-title{padding:0 20px; font-size:12px; letter-spacing:.14em; text-transform:uppercase;
     color:var(--muted); margin:6px 0 -6px;}
@@ -60,6 +65,7 @@
   .grid{display:grid; grid-template-columns:1fr 1fr; gap:14px; padding:22px 20px;}
   .card{background:var(--asphalt-2); border:1px solid var(--line); border-radius:14px; padding:16px;
     cursor:pointer; transition:border-color .2s; position:relative;}
+  .card.readonly{cursor:default;}
   .card:active{border-color:var(--amber);}
   .card-top{display:flex; justify-content:space-between; align-items:flex-start;}
   .card-label{font-size:11px; color:var(--muted); letter-spacing:.1em; text-transform:uppercase;}
@@ -72,6 +78,7 @@
   .log-row{display:flex; justify-content:space-between; align-items:center; padding:12px 14px;
     background:var(--asphalt-2); border-radius:10px; border:1px solid var(--line);}
   .log-row .n{font-family:'JetBrains Mono',monospace; font-weight:700;}
+  .log-row .sub-n{font-size:11px; color:var(--muted); font-weight:400; display:block; margin-top:2px;}
 
   .edit-btn{width:100%; margin-top:6px; padding:10px; background:transparent; color:var(--amber);
     border:1px dashed var(--amber); border-radius:10px; font-family:'JetBrains Mono',monospace;
@@ -120,11 +127,13 @@
       <line id="needle" class="needle" x1="150" y1="150" x2="150" y2="40" stroke="#eef1f3" stroke-width="4" stroke-linecap="round"/>
       <circle cx="150" cy="150" r="9" fill="#eef1f3"/>
     </svg>
-    <div class="dial-readout">
-      <div class="dial-num" id="readinessNum">--</div>
-      <div class="dial-label">Readiness / 100 (load-based)</div>
-      <div class="dial-flag" id="readinessFlag" style="color:var(--muted); border-color:var(--muted);">—</div>
-    </div>
+  </div>
+  <div class="dial-readout">
+    <div class="dial-num" id="readinessNum">--</div>
+    <div class="dial-label">Readiness / 100</div>
+    <div class="dial-flag" id="readinessFlag" style="color:var(--muted); border-color:var(--muted);">—</div>
+    <div class="dial-prescription" id="readinessPrescription"></div>
+    <div class="dial-breakdown" id="readinessBreakdown"></div>
   </div>
 </div>
 
@@ -137,8 +146,14 @@
 <div class="sessions" id="sessionCards"></div>
 
 <div class="lane"></div>
-<div class="section-title" style="margin-top:16px;">Load &amp; Efficiency</div>
-<div class="card-note" style="padding:0 20px 8px;">For the authoritative overreach signal, check Garmin's own Training Status directly in Garmin Connect. Readiness above is based on load alone.</div>
+<div class="section-title" style="margin-top:16px;">Rides &amp; Training Load</div>
+<div class="card-note" style="padding:0 20px 8px;">Auto-synced from Strava via the Vercel cron job. Relative Effort drives the load component of the readiness score above.</div>
+<div class="grid" id="loadGrid"></div>
+<div class="log" id="ridesLog"></div>
+
+<div class="lane"></div>
+<div class="section-title" style="margin-top:16px;">Efficiency</div>
+<div class="card-note" style="padding:0 20px 8px;">For the authoritative overreach signal, check Garmin's own Training Status directly in Garmin Connect.</div>
 <div class="grid" id="metricGrid"></div>
 
 <div class="lane"></div>
@@ -177,7 +192,6 @@ const SUPABASE_KEY = 'sb_publishable_I3czLjSqr1SKtlc0_jPPrA_ufGPmPt_';
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 const DEFAULTS = {
-  trainingLoad: 91,
   torqueEff: 76,
   ftp: 291,
   vo2max: 55,
@@ -189,16 +203,17 @@ const DEFAULTS = {
   caloriesEaten: 0,
   rosterAnchor: '2026-07-05',
   programStart: '2026-07-06',
-  rideOk0: null,
-  rideOk1: null,
-  rideOk2: null,
-  rideOk3: null,
+  // readiness formula tuning — all editable via Standing Numbers
+  hrExcellent: 48,     // overnight avg HR that scores 100
+  hrPoor: 68,          // overnight avg HR that scores 0
+  weeklyLoadTarget: 300, // trailing-7-day sum of Strava Relative Effort that represents a "full tunnel" (100%)
   lastUpdated: null
 };
 
 let data = {...DEFAULTS};
 let currentField = null;
 let latestSleep = null;
+let recentRides = [];
 
 // ---- Session library ----
 const NIGHT_SESSIONS = [
@@ -284,6 +299,61 @@ async function loadLatestSleep(){
   }catch(e){ console.error('Sleep load failed', e); }
 }
 
+async function loadRides(){
+  try{
+    const since = new Date(); since.setDate(since.getDate()-14);
+    const sinceStr = since.toISOString().slice(0,10);
+    const { data: rows, error } = await sb.from('rides').select('*')
+      .gte('ride_date', sinceStr).order('ride_date',{ascending:false});
+    if(error) throw error;
+    recentRides = rows || [];
+  }catch(e){ console.error('Rides load failed', e); recentRides = []; }
+}
+
+// ---- Readiness formula ----
+// sleep 40% + overnight HR 25% + training load (from rides) 35%, hard-capped at ~50 if sleep < 5h
+function weeklyRelativeEffort(){
+  const cutoff = new Date(); cutoff.setDate(cutoff.getDate()-7); cutoff.setHours(0,0,0,0);
+  return recentRides
+    .filter(r => new Date(r.ride_date+'T00:00:00') >= cutoff)
+    .reduce((sum,r) => sum + (r.relative_effort || 0), 0);
+}
+
+function computeReadiness(){
+  const sleepHrs = latestSleep && latestSleep.sleep_duration_ms ? latestSleep.sleep_duration_ms/3600000 : null;
+  const overnightHr = latestSleep && latestSleep.avg_heart_rate!=null ? Number(latestSleep.avg_heart_rate) : null;
+  const weeklyEffort = weeklyRelativeEffort();
+
+  const sleepScore = sleepHrs!=null ? clamp(sleepHrs/8*100, 0, 100) : 60; // neutral-ish fallback if no data yet
+  const hrRange = Math.max(1, data.hrPoor - data.hrExcellent);
+  const hrScore = overnightHr!=null ? clamp(100 - (overnightHr - data.hrExcellent)/hrRange*100, 0, 100) : 60;
+  const loadPct = clamp(weeklyEffort / Math.max(1,data.weeklyLoadTarget) * 100, 0, 100);
+  const loadScore = 100 - loadPct;
+
+  let readiness = sleepScore*0.40 + hrScore*0.25 + loadScore*0.35;
+  let capped = false;
+  if(sleepHrs!=null && sleepHrs < 5){ readiness = Math.min(readiness, 50); capped = true; }
+
+  return {
+    readiness: Math.round(clamp(readiness,0,100)),
+    sleepScore: Math.round(sleepScore),
+    hrScore: Math.round(hrScore),
+    loadScore: Math.round(loadScore),
+    loadPct: Math.round(loadPct),
+    weeklyEffort,
+    sleepHrs, overnightHr, capped
+  };
+}
+
+function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
+
+function bandFor(r){
+  if(r < 40) return { label:'REST / Z1', color:'var(--red)', text:'Easy spin or full rest only — body isn\u2019t recovered enough to push.' };
+  if(r < 60) return { label:'Z2 ENDURANCE', color:'var(--amber)', text:'Aerobic endurance only today — steady Z2, no surges or intervals.' };
+  if(r < 80) return { label:'TEMPO / NORMAL', color:'var(--text)', text:'Normal training load is fine — tempo, sweet spot, or the scheduled session as planned.' };
+  return { label:'RACE / INTERVALS', color:'var(--cyan)', text:'Well recovered — good day for intervals, VO2 work, or racing.' };
+}
+
 // ---- Rendering ----
 function scoreColor(v){ if(v>=75) return 'var(--cyan)'; if(v>=50) return 'var(--amber)'; return 'var(--red)'; }
 function arcSVG(pct, color, size=56){
@@ -294,7 +364,6 @@ function arcSVG(pct, color, size=56){
       stroke-linecap="round" stroke-dasharray="${c}" stroke-dashoffset="${off}"
       transform="rotate(-90 ${size/2} ${size/2})"/></svg>`;
 }
-function computeReadiness(){ return Math.round(Math.max(0, 100 - data.trainingLoad)); }
 
 function renderSleep(){
   if(!latestSleep){
@@ -305,7 +374,7 @@ function renderSleep(){
   document.getElementById('sleepLog').innerHTML = `
     <div class="log-row"><span>Date</span><span class="n">${latestSleep.log_date}</span></div>
     <div class="log-row"><span>Sleep duration</span><span class="n">${hrs} hrs</span></div>
-    <div class="log-row"><span>Avg heart rate</span><span class="n">${latestSleep.avg_heart_rate ?? '—'} bpm</span></div>
+    <div class="log-row"><span>Overnight avg HR</span><span class="n">${latestSleep.avg_heart_rate ?? '—'} bpm</span></div>
   `;
 }
 
@@ -351,12 +420,52 @@ function renderRaceCalendar(){
   document.getElementById('raceLog').innerHTML = html;
 }
 
+function renderLoadAndRides(readinessInfo){
+  // Weekly load card + a "days since hardest effort" style card
+  const last7 = recentRides.filter(r=>{
+    const cutoff = new Date(); cutoff.setDate(cutoff.getDate()-7); cutoff.setHours(0,0,0,0);
+    return new Date(r.ride_date+'T00:00:00') >= cutoff;
+  });
+  const rideCount7 = last7.length;
+  const totalTimeS = last7.reduce((s,r)=>s+(r.moving_time_s||0),0);
+  const totalHrs = (totalTimeS/3600).toFixed(1);
+
+  const loadMetrics = [
+    {label:'7-day Load', val:readinessInfo.loadPct, unit:'% of tunnel',
+      note:`Relative Effort sum: ${readinessInfo.weeklyEffort} / target ${data.weeklyLoadTarget}`},
+    {label:'7-day Volume', val:rideCount7, unit:` rides / ${totalHrs}h`,
+      note: rideCount7 ? 'Auto-counted from synced Strava rides' : 'No rides synced in the last 7 days'},
+  ];
+  document.getElementById('loadGrid').innerHTML = loadMetrics.map(m => `
+    <div class="card readonly">
+      <div class="card-top">
+        <div><div class="card-label">${m.label}</div><div class="card-num">${m.val}<small>${m.unit}</small></div></div>
+        <div class="arc-wrap">${arcSVG(Math.min(m.label==='7-day Load'?m.val:100,100), scoreColor(100-(m.label==='7-day Load'?m.val:0)))}</div>
+      </div>
+      <div class="card-note">${m.note}</div>
+    </div>`).join('');
+
+  if(!recentRides.length){
+    document.getElementById('ridesLog').innerHTML = `<div class="card-note" style="padding:14px;">No rides synced yet — waiting on the Vercel cron job's first pull from Strava.</div>`;
+    return;
+  }
+  const rows = recentRides.slice(0,8).map(r=>{
+    const mins = r.moving_time_s ? Math.round(r.moving_time_s/60) : '—';
+    const watts = r.avg_watts ? `${Math.round(r.avg_watts)}W avg` : 'no power data';
+    const d = new Date(r.ride_date+'T00:00:00').toLocaleDateString([], {weekday:'short', month:'short', day:'numeric'});
+    return `<div class="log-row">
+      <span>${d}<span class="sub-n">${(r.name||'Ride')} · ${mins} min · ${watts}</span></span>
+      <span class="n">${r.relative_effort ?? '—'}<span class="sub-n" style="text-align:right;">effort</span></span>
+    </div>`;
+  }).join('');
+  document.getElementById('ridesLog').innerHTML = rows;
+}
+
 async function loadWeather(){
   try{
     const res = await fetch('https://api.open-meteo.com/v1/forecast?latitude=-33.036&longitude=151.660&daily=precipitation_probability_max&timezone=Australia%2FSydney&forecast_days=7');
     const wx = await res.json();
     const days = wx.daily.time, rain = wx.daily.precipitation_probability_max;
-    const today = new Date(); today.setHours(0,0,0,0);
     let html = '';
     for(let i=0; i<Math.min(7, days.length); i++){
       const d = new Date(days[i]+'T00:00:00');
@@ -375,13 +484,18 @@ async function loadWeather(){
 }
 
 function render(){
-  const r = computeReadiness();
-  document.getElementById('readinessNum').textContent = r;
-  document.getElementById('needle').style.transform = `rotate(${-90+(r/100)*180}deg)`;
+  const ri = computeReadiness();
+  document.getElementById('readinessNum').textContent = ri.readiness;
+  document.getElementById('needle').style.transform = `rotate(${-90+(ri.readiness/100)*180}deg)`;
+
+  const band = bandFor(ri.readiness);
   const flag = document.getElementById('readinessFlag');
-  if(r>=75){ flag.textContent='GO HARD TODAY'; flag.style.color='var(--cyan)'; flag.style.borderColor='var(--cyan)'; }
-  else if(r>=50){ flag.textContent='MODERATE — LISTEN TO BODY'; flag.style.color='var(--amber)'; flag.style.borderColor='var(--amber)'; }
-  else { flag.textContent='REST / EASY ONLY'; flag.style.color='var(--red)'; flag.style.borderColor='var(--red)'; }
+  flag.textContent = band.label;
+  flag.style.color = band.color;
+  flag.style.borderColor = band.color;
+  document.getElementById('readinessPrescription').textContent = band.text + (ri.capped ? ' (capped — under 5h sleep)' : '');
+  document.getElementById('readinessBreakdown').innerHTML =
+    `sleep ${ri.sleepScore} × 40% &nbsp;+&nbsp; HR ${ri.hrScore} × 25% &nbsp;+&nbsp; load ${ri.loadScore} × 35%`;
 
   document.getElementById('lastUpdated').textContent = data.lastUpdated
     ? 'Last updated: ' + new Date(data.lastUpdated).toLocaleString([], {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})
@@ -393,9 +507,9 @@ function render(){
   const tomorrow = new Date(today); tomorrow.setDate(today.getDate()+1);
   document.getElementById('sessionCards').innerHTML = renderSessionCard(today,'Today') + renderSessionCard(tomorrow,'Tomorrow');
 
+  renderLoadAndRides(ri);
+
   const metrics = [
-    {key:'trainingLoad', label:'Load (7-day)', val:data.trainingLoad, unit:'/tunnel',
-      note: data.trainingLoad>85 ? 'Near top of load tunnel — ease off before pushing more' : 'Comfortable load range'},
     {key:'torqueEff', label:'Torque Efficiency', val:data.torqueEff, unit:'%',
       note: data.torqueEff<80 ? 'Room to improve pedal stroke — add cadence drills' : 'Solid pedalling mechanics'},
   ];
@@ -440,14 +554,15 @@ function render(){
     <div class="log-row"><span>VO2max estimate</span><span class="n">${data.vo2max}</span></div>
     <div class="log-row"><span>Weight</span><span class="n">${data.weight} kg</span></div>
     <div class="log-row"><span>Program week</span><span class="n">${programWeek(new Date())}/12</span></div>
-    <div class="edit-btn" onclick="openModal('standing','Standing Numbers')">Update FTP / VO2max / Weight / Program Start</div>
+    <div class="log-row"><span>Readiness HR range</span><span class="n">${data.hrExcellent}–${data.hrPoor} bpm</span></div>
+    <div class="log-row"><span>Weekly load target</span><span class="n">${data.weeklyLoadTarget} effort pts</span></div>
+    <div class="edit-btn" onclick="openModal('standing','Standing Numbers')">Update FTP / VO2max / Weight / Program Start / Readiness Tuning</div>
   `;
 
   loadWeather();
 }
 
 const FIELD_SETS = {
-  trainingLoad: [{key:'trainingLoad', label:'Training Load position (0-100, % of tunnel)', val:()=>data.trainingLoad, type:'number'}],
   torqueEff: [{key:'torqueEff', label:'Torque Effectiveness (%)', val:()=>data.torqueEff, type:'number'}],
   fuel: [
     {key:'caloriesBurned', label:'Calories burned on ride (from Strava)', val:()=>data.caloriesBurned, type:'number'},
@@ -462,6 +577,9 @@ const FIELD_SETS = {
     {key:'weight', label:'Weight (kg)', val:()=>data.weight, type:'number'},
     {key:'rosterAnchor', label:'First day of a nightshift block (YYYY-MM-DD)', val:()=>data.rosterAnchor, type:'text'},
     {key:'programStart', label:'Week 1 start date of 12-wk plan (YYYY-MM-DD)', val:()=>data.programStart, type:'text'},
+    {key:'hrExcellent', label:'Overnight HR that scores 100 (fully recovered)', val:()=>data.hrExcellent, type:'number'},
+    {key:'hrPoor', label:'Overnight HR that scores 0 (poor recovery)', val:()=>data.hrPoor, type:'number'},
+    {key:'weeklyLoadTarget', label:'7-day Relative Effort sum = "full tunnel" (100%)', val:()=>data.weeklyLoadTarget, type:'number'},
   ]
 };
 
@@ -493,6 +611,7 @@ async function saveModal(){
 async function init(){
   await loadSettings();
   await loadLatestSleep();
+  await loadRides();
   render();
 }
 init();
