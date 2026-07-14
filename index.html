@@ -292,7 +292,14 @@ async function loadSettings(){
 }
 
 async function saveSetting(key, value){
-  await sb.from('dashboard_settings').upsert({ key, value: String(value), updated_at: new Date().toISOString() }, { onConflict: 'key' });
+  try{
+    const r = await fetch('/api/save-setting', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ key, value })
+    });
+    if(!r.ok){ console.error('Save setting failed', await r.text()); }
+  }catch(e){ console.error('Save setting request failed', e); }
 }
 
 async function loadLatestSleep(){
@@ -326,10 +333,15 @@ async function loadRideRatings(){
 }
 
 async function saveRideRating(rideId, userScore, note, autoScore){
-  const payload = { ride_id: rideId, user_score: userScore, note: note||null, updated_at: new Date().toISOString() };
-  if(autoScore!=null) payload.auto_score = autoScore;
-  await sb.from('ride_ratings').upsert(payload, { onConflict: 'ride_id' });
-  rideRatings[rideId] = {...(rideRatings[rideId]||{}), ...payload};
+  try{
+    const r = await fetch('/api/rate-ride', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ ride_id: rideId, user_score: userScore, note, auto_score: autoScore })
+    });
+    if(!r.ok){ console.error('Save rating failed', await r.text()); return; }
+    rideRatings[rideId] = { ride_id: rideId, user_score: userScore, note, auto_score: autoScore, updated_at: new Date().toISOString() };
+  }catch(e){ console.error('Save rating request failed', e); }
 }
 
 // ---- Readiness formula ----
