@@ -215,6 +215,7 @@ const DEFAULTS = {
   hrExcellent: 48,     // overnight avg HR that scores 100
   hrPoor: 68,          // overnight avg HR that scores 0
   weeklyLoadTarget: 300, // trailing-7-day sum of Strava Relative Effort that represents a "full tunnel" (100%)
+  weeklyHoursTarget: 7.4, // target hrs/week (sustained) toward next W/kg tier
   ftpTestDate: '2026-06-23',   // date of last FTP test
   ftpTestIntervalWeeks: 12,    // how often to retest (~3 months by default)
   lastUpdated: null
@@ -320,7 +321,7 @@ async function loadLatestSleep(){
 
 async function loadRides(){
   try{
-    const since = new Date(); since.setDate(since.getDate()-14);
+    const since = new Date(); since.setDate(since.getDate()-35);
     const sinceStr = since.toISOString().slice(0,10);
     const { data: rows, error } = await sb.from('rides').select('*')
       .gte('ride_date', sinceStr).order('ride_date',{ascending:false});
@@ -388,6 +389,24 @@ function computeReadiness(){
 }
 
 function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
+
+// ---- Weekly volume trend (rolling average toward W/kg progression target) ----
+function weeklyVolumeTrend(){
+  const now = new Date();
+  const cutoff7 = new Date(now); cutoff7.setDate(cutoff7.getDate()-7); cutoff7.setHours(0,0,0,0);
+  const cutoff28 = new Date(now); cutoff28.setDate(cutoff28.getDate()-28); cutoff28.setHours(0,0,0,0);
+
+  const secs7 = recentRides
+    .filter(r => new Date(r.ride_date+'T00:00:00') >= cutoff7)
+    .reduce((s,r) => s + (r.moving_time_s||0), 0);
+  const secs28 = recentRides
+    .filter(r => new Date(r.ride_date+'T00:00:00') >= cutoff28)
+    .reduce((s,r) => s + (r.moving_time_s||0), 0);
+
+  const hrsThisWeek = secs7/3600;
+  const rolling4wkAvg = (secs28/3600)/4;
+  return { hrsThisWeek, rolling4wkAvg };
+}
 
 // ---- Ride vs. prescription auto-scoring ----
 // Heuristic only: Strava sync gives ride averages, not interval-level data, so this
@@ -521,6 +540,9 @@ function renderLoadAndRides(readinessInfo){
   const totalTimeS = last7.reduce((s,r)=>s+(r.moving_time_s||0),0);
   const totalHrs = (totalTimeS/3600).toFixed(1);
 
+  const trend = weeklyVolumeTrend();
+  const pctToTarget = clamp((trend.rolling4wkAvg / Math.max(0.1,data.weeklyHoursTarget)) * 100, 0, 100);
+
   const loadMetrics = [
     {label:'7-day Load', val:readinessInfo.loadPct, unit:'% of tunnel',
       note:`Relative Effort sum: ${readinessInfo.weeklyEffort} / target ${data.weeklyLoadTarget}`},
@@ -534,7 +556,14 @@ function renderLoadAndRides(readinessInfo){
         <div class="arc-wrap">${arcSVG(Math.min(m.label==='7-day Load'?m.val:100,100), scoreColor(100-(m.label==='7-day Load'?m.val:0)))}</div>
       </div>
       <div class="card-note">${m.note}</div>
-    </div>`).join('');
+    </div>`).join('') + `
+    <div class="card readonly">
+      <div class="card-top">
+        <div><div class="card-label">4-wk Avg / Week</div><div class="card-num">${trend.rolling4wkAvg.toFixed(1)}<small>hrs (target ${data.weeklyHoursTarget}h)</small></div></div>
+        <div class="arc-wrap">${arcSVG(pctToTarget, scoreColor(pctToTarget))}</div>
+      </div>
+      <div class="card-note">This week so far: ${trend.hrsThisWeek.toFixed(1)}h. Rolling average smooths out race weeks vs. nightshift weeks \u2014 track this trending up over the next 9\u201312 months toward the next W/kg tier.</div>
+    </div>`;
 
   if(!recentRides.length){
     document.getElementById('ridesLog').innerHTML = `<div class="card-note" style="padding:14px;">No rides synced yet — waiting on the Vercel cron job's first pull from Strava.</div>`;
@@ -686,6 +715,7 @@ const FIELD_SETS = {
     {key:'hrExcellent', label:'Overnight HR that scores 100 (fully recovered)', val:()=>data.hrExcellent, type:'number'},
     {key:'hrPoor', label:'Overnight HR that scores 0 (poor recovery)', val:()=>data.hrPoor, type:'number'},
     {key:'weeklyLoadTarget', label:'7-day Relative Effort sum = "full tunnel" (100%)', val:()=>data.weeklyLoadTarget, type:'number'},
+    {key:'weeklyHoursTarget', label:'Target hrs/week (rolling avg) for next W/kg tier', val:()=>data.weeklyHoursTarget, type:'number'},
     {key:'ftpTestDate', label:'Date of last FTP test (YYYY-MM-DD)', val:()=>data.ftpTestDate, type:'text'},
     {key:'ftpTestIntervalWeeks', label:'Retest interval (weeks)', val:()=>data.ftpTestIntervalWeeks, type:'number'},
   ]
