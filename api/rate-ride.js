@@ -1,9 +1,27 @@
 // Server-side only — SUPABASE_SERVICE_ROLE_KEY is a Vercel env var, never sent to the browser.
 // This replaces the open public write policy that let anyone with the anon key edit ride_ratings directly.
 
+// Basic in-memory rate limit: max 20 requests per IP per 60s (see save-setting.js for rationale).
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_MAX = 20;
+const requestLog = globalThis.__rateRideRequestLog || (globalThis.__rateRideRequestLog = new Map());
+
+function isRateLimited(ip){
+  const now = Date.now();
+  const timestamps = (requestLog.get(ip) || []).filter(t => now - t < RATE_LIMIT_WINDOW_MS);
+  timestamps.push(now);
+  requestLog.set(ip, timestamps);
+  return timestamps.length > RATE_LIMIT_MAX;
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  const ip = (req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'unknown').split(',')[0].trim();
+  if (isRateLimited(ip)) {
+    return res.status(429).json({ error: 'Too many requests, slow down and try again in a minute.' });
   }
 
   const { ride_id, user_score, note, auto_score } = req.body || {};
