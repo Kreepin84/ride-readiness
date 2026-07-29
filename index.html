@@ -104,6 +104,10 @@
   .modal-actions{display:flex; gap:10px; margin-top:18px;}
   .modal-actions button{flex:1; padding:12px; border-radius:8px; font-weight:600; font-size:14px;}
   .btn-save{background:var(--amber); color:#14171a; border:none;}
+  .btn-save[disabled]{opacity:.5;}
+  .modal-error{background:rgba(229,72,77,0.12); border:1px solid var(--red); color:var(--red);
+    border-radius:8px; padding:10px 12px; font-size:13px; margin-top:14px; display:none;}
+  .modal-error.show{display:block;}
   .btn-cancel{background:transparent; color:var(--muted); border:1px solid var(--line);}
 
   .page-wrap{max-width:480px; margin:0 auto;}
@@ -157,6 +161,10 @@
 <div class="section-title" style="margin-top:16px;">Rides &amp; Training Load</div>
 <div class="card-note" style="padding:0 20px 8px;">Auto-synced from Strava via the Vercel cron job. Relative Effort drives the load component of the readiness score above. Tap a ride to rate it vs. what was prescribed.</div>
 <div class="grid" id="loadGrid"></div>
+<div class="card readonly" id="volumeChartCard" style="margin:0 20px 14px;">
+  <div class="card-label">Weekly Volume (hrs)</div>
+  <div id="volumeChart" style="margin-top:6px;"></div>
+</div>
 <div class="log" id="ridesLog"></div>
 
 <div class="lane"></div>
@@ -173,9 +181,6 @@
 <div class="log" id="rainLog"><div class="card-note" style="padding:14px;">Loading forecast&hellip;</div></div>
 
 <div class="lane"></div>
-<div class="section-title" style="margin-top:16px;">Fuel Balance</div>
-<div class="log" id="fuelLog"></div>
-
 <div class="lane"></div>
 <div class="section-title" style="margin-top:16px;">Standing Numbers</div>
 <div class="log" id="standingLog"></div>
@@ -186,9 +191,10 @@
   <div class="modal">
     <h3 id="modalTitle">Update value</h3>
     <div id="modalFields"></div>
+    <div class="modal-error" id="modalError"></div>
     <div class="modal-actions">
       <button class="btn-cancel" onclick="closeModal()">Cancel</button>
-      <button class="btn-save" onclick="saveModal()">Save</button>
+      <button class="btn-save" id="btnSave" onclick="saveModal()">Save</button>
     </div>
   </div>
 </div>
@@ -204,11 +210,6 @@ const DEFAULTS = {
   ftp: 291,
   vo2max: 55,
   weight: 83,
-  baselineMaintenance: 2600,
-  goalWeight: 80,
-  easyDayDeficit: 400,
-  caloriesBurned: 0,
-  caloriesEaten: 0,
   rosterAnchor: '2026-07-05',
   programStart: '2026-07-06',
   // readiness formula tuning — all editable via Standing Numbers
@@ -307,8 +308,16 @@ async function saveSetting(key, value){
       headers: {'Content-Type':'application/json'},
       body: JSON.stringify({ key, value })
     });
-    if(!r.ok){ console.error('Save setting failed', await r.text()); }
-  }catch(e){ console.error('Save setting request failed', e); }
+    if(!r.ok){
+      const body = await r.text().catch(()=>'');
+      console.error('Save setting failed', body);
+      return { ok:false, status:r.status };
+    }
+    return { ok:true };
+  }catch(e){
+    console.error('Save setting request failed', e);
+    return { ok:false, status:0 };
+  }
 }
 
 async function loadLatestSleep(){
@@ -321,7 +330,7 @@ async function loadLatestSleep(){
 
 async function loadRides(){
   try{
-    const since = new Date(); since.setDate(since.getDate()-35);
+    const since = new Date(); since.setDate(since.getDate()-56);
     const sinceStr = since.toISOString().slice(0,10);
     const { data: rows, error } = await sb.from('rides').select('*')
       .gte('ride_date', sinceStr).order('ride_date',{ascending:false});
@@ -348,9 +357,17 @@ async function saveRideRating(rideId, userScore, note, autoScore){
       headers: {'Content-Type':'application/json'},
       body: JSON.stringify({ ride_id: rideId, user_score: userScore, note, auto_score: autoScore })
     });
-    if(!r.ok){ console.error('Save rating failed', await r.text()); return; }
+    if(!r.ok){
+      const body = await r.text().catch(()=>'');
+      console.error('Save rating failed', body);
+      return { ok:false, status:r.status };
+    }
     rideRatings[rideId] = { ride_id: rideId, user_score: userScore, note, auto_score: autoScore, updated_at: new Date().toISOString() };
-  }catch(e){ console.error('Save rating request failed', e); }
+    return { ok:true };
+  }catch(e){
+    console.error('Save rating request failed', e);
+    return { ok:false, status:0 };
+  }
 }
 
 // ---- Readiness formula ----
@@ -408,6 +425,36 @@ function weeklyVolumeTrend(){
   return { hrsThisWeek, rolling4wkAvg };
 }
 
+// Buckets rides into the last N complete weeks (most recent 7-day block first) for a bar chart.
+function weeklyVolumeSeries(weeks=8){
+  const now = new Date(); now.setHours(0,0,0,0);
+  const buckets = [];
+  for(let i=weeks-1; i>=0; i--){
+    const end = new Date(now); end.setDate(end.getDate() - i*7);
+    const start = new Date(end); start.setDate(start.getDate()-7);
+    const secs = recentRides
+      .filter(r => { const d = new Date(r.ride_date+'T00:00:00'); return d >= start && d < end; })
+      .reduce((s,r) => s + (r.moving_time_s||0), 0);
+    buckets.push({ label: i===0 ? 'This wk' : `-${i}w`, hours: secs/3600 });
+  }
+  return buckets;
+}
+
+function barChartSVG(series, height=90){
+  const max = Math.max(...series.map(s=>s.hours), 1);
+  const barW = 100/series.length;
+  const bars = series.map((s,i)=>{
+    const h = Math.max(2, (s.hours/max)*(height-18));
+    const x = i*barW;
+    const isLast = i === series.length-1;
+    const color = isLast ? 'var(--amber)' : 'var(--cyan)';
+    return `<rect x="${x+barW*0.18}%" y="${height-h-16}" width="${barW*0.64}%" height="${h}" rx="3" fill="${color}" opacity="${isLast?1:0.75}"/>
+      <text x="${x+barW*0.5}%" y="${height-h-22}" font-size="9" fill="var(--text)" text-anchor="middle" font-family="JetBrains Mono, monospace">${s.hours.toFixed(1)}</text>
+      <text x="${x+barW*0.5}%" y="${height-2}" font-size="8" fill="var(--muted)" text-anchor="middle" font-family="JetBrains Mono, monospace">${s.label}</text>`;
+  }).join('');
+  return `<svg width="100%" height="${height}" viewBox="0 0 300 ${height}" preserveAspectRatio="none" style="overflow:visible;">${bars}</svg>`;
+}
+
 // ---- Ride vs. prescription auto-scoring ----
 // Heuristic only: Strava sync gives ride averages, not interval-level data, so this
 // estimates a 1-10 fit between what was prescribed that day and what the ride's
@@ -439,7 +486,10 @@ function bandScore(val, [lo,hi], maxPts){
 function autoScoreRide(ride, tier){
   const band = TIER_BANDS[tier];
   const ftp = data.ftp || 291;
-  const powerPct = ride.avg_watts ? (ride.avg_watts/ftp*100) : null;
+  // Weighted avg power (Strava's NP-equivalent) better reflects true intensity when a ride
+  // has surges/coasting mixed in \u2014 prefer it, fall back to plain average for older synced rides.
+  const powerForScoring = ride.weighted_avg_watts || ride.avg_watts;
+  const powerPct = powerForScoring ? (powerForScoring/ftp*100) : null;
   const durMin = ride.moving_time_s ? ride.moving_time_s/60 : null;
   const effortPerHr = (ride.relative_effort && ride.moving_time_s) ? ride.relative_effort/(ride.moving_time_s/3600) : null;
 
@@ -565,13 +615,17 @@ function renderLoadAndRides(readinessInfo){
       <div class="card-note">This week so far: ${trend.hrsThisWeek.toFixed(1)}h. Rolling average smooths out race weeks vs. nightshift weeks \u2014 track this trending up over the next 9\u201312 months toward the next W/kg tier.</div>
     </div>`;
 
+  document.getElementById('volumeChart').innerHTML = barChartSVG(weeklyVolumeSeries(8));
+
   if(!recentRides.length){
     document.getElementById('ridesLog').innerHTML = `<div class="card-note" style="padding:14px;">No rides synced yet — waiting on the Vercel cron job's first pull from Strava.</div>`;
     return;
   }
   const rows = recentRides.slice(0,8).map(r=>{
     const mins = r.moving_time_s ? Math.round(r.moving_time_s/60) : '—';
-    const watts = r.avg_watts ? `${Math.round(r.avg_watts)}W avg` : 'no power data';
+    const wattsDisplay = r.weighted_avg_watts
+      ? `${Math.round(r.weighted_avg_watts)}W \u00b7 wtd (${Math.round(r.avg_watts||0)}W avg)`
+      : (r.avg_watts ? `${Math.round(r.avg_watts)}W avg` : 'no power data');
     const d = new Date(r.ride_date+'T00:00:00').toLocaleDateString([], {weekday:'short', month:'short', day:'numeric'});
     const dateObj = new Date(r.ride_date+'T00:00:00');
     const tier = tierForPrescription(sessionForDate(dateObj).text);
@@ -581,7 +635,7 @@ function renderLoadAndRides(readinessInfo){
       ? `${rating.user_score}/10 <span class="sub-n" style="text-align:right;">your rating</span>`
       : (auto!=null ? `~${auto}/10 <span class="sub-n" style="text-align:right;">auto est.</span>` : `— <span class="sub-n" style="text-align:right;">no est.</span>`);
     return `<div class="log-row" onclick="openRideRating(${r.id})" style="cursor:pointer;">
-      <span>${d}<span class="sub-n">${(r.name||'Ride')} · ${mins} min · ${watts} · effort ${r.relative_effort ?? '—'}</span></span>
+      <span>${d}<span class="sub-n">${(r.name||'Ride')} · ${mins} min · ${wattsDisplay} · effort ${r.relative_effort ?? '—'}</span></span>
       <span class="n">${scoreLabel}</span>
     </div>`;
   }).join('');
@@ -651,31 +705,6 @@ function render(){
 
   renderRaceCalendar();
 
-  const todaySession = sessionForDate(today);
-  const isHardDay = todaySession.isHard;
-  const wt = data.weight;
-  const rawTarget = data.baselineMaintenance + Number(data.caloriesBurned||0);
-  const dailyTarget = isHardDay ? Math.round(rawTarget) : Math.round(rawTarget - data.easyDayDeficit);
-  const preTarget = isHardDay
-    ? `${Math.round(wt*1*4)}–${Math.round(wt*2*4)} kcal, mostly carbs (1–2g/kg), 1–2 hrs before`
-    : `Fasted is reasonable here — low intensity means low bonk risk, and it's a deficit day`;
-  const postTarget = isHardDay
-    ? `${Math.round(wt*1*4 + wt*0.3*4)}–${Math.round(wt*1.2*4 + wt*0.3*4)} kcal within ~60 min (carbs 1–1.2g/kg + ~25g protein)`
-    : `Normal meal timing is fine — no rush on easy days`;
-  const balance = data.caloriesEaten - data.caloriesBurned;
-  const balColor = balance >= 0 ? 'var(--cyan)' : 'var(--red)';
-  document.getElementById('fuelLog').innerHTML = `
-    <div class="log-row"><span>Today's session</span><span class="n">${isHardDay?'HARD DAY':'Easy/Rest — deficit day'}</span></div>
-    <div class="log-row"><span>Daily target</span><span class="n">${dailyTarget} kcal</span></div>
-    <div class="log-row"><span>Goal weight</span><span class="n">${data.goalWeight} kg (currently ${wt} kg)</span></div>
-    <div class="card-note" style="padding:0 2px;">Pre-training: ${preTarget}</div>
-    <div class="card-note" style="padding:0 2px;">Post-training: ${postTarget}</div>
-    <div class="log-row"><span>Calories burned (ride)</span><span class="n">${data.caloriesBurned}</span></div>
-    <div class="log-row"><span>Calories eaten (logged)</span><span class="n">${data.caloriesEaten}</span></div>
-    <div class="log-row"><span>Balance vs. logged intake</span><span class="n" style="color:${balColor}">${balance>=0?'+':''}${balance}</span></div>
-    <div class="edit-btn" onclick="openModal('fuel','Fuel Balance')">Update Calories / Goals</div>
-  `;
-
   const lastTest = new Date(data.ftpTestDate+'T00:00:00');
   const nextDue = new Date(lastTest); nextDue.setDate(nextDue.getDate() + (data.ftpTestIntervalWeeks*7));
   const daysToDue = Math.round((nextDue - new Date())/86400000);
@@ -699,13 +728,6 @@ function render(){
 
 const FIELD_SETS = {
   torqueEff: [{key:'torqueEff', label:'Torque Effectiveness (%)', val:()=>data.torqueEff, type:'number'}],
-  fuel: [
-    {key:'caloriesBurned', label:'Calories burned on ride (from Strava)', val:()=>data.caloriesBurned, type:'number'},
-    {key:'caloriesEaten', label:"Today's total calories eaten", val:()=>data.caloriesEaten, type:'number'},
-    {key:'baselineMaintenance', label:'Rest-day maintenance baseline (kcal)', val:()=>data.baselineMaintenance, type:'number'},
-    {key:'goalWeight', label:'Goal weight (kg)', val:()=>data.goalWeight, type:'number'},
-    {key:'easyDayDeficit', label:'Easy-day deficit target (kcal)', val:()=>data.easyDayDeficit, type:'number'},
-  ],
   standing: [
     {key:'ftp', label:'FTP (Watts)', val:()=>data.ftp, type:'number'},
     {key:'vo2max', label:'VO2max estimate', val:()=>data.vo2max, type:'number'},
@@ -729,6 +751,8 @@ function openModal(fieldKey, title){
     <label>${f.label}</label>
     <input type="${f.type}" id="input-${f.key}" value="${f.val()}">
   `).join('');
+  const errEl = document.getElementById('modalError');
+  errEl.classList.remove('show'); errEl.textContent = '';
   document.getElementById('modalBg').classList.add('open');
 }
 
@@ -748,34 +772,59 @@ function openRideRating(rideId){
     <label>Note (optional)</label>
     <input type="text" id="input-note" value="${existing.note ?? ''}" placeholder="e.g. felt flat, nailed the intervals...">
   `;
+  const errEl = document.getElementById('modalError');
+  errEl.classList.remove('show'); errEl.textContent = '';
   document.getElementById('modalBg').classList.add('open');
 }
 
 function closeModal(){ document.getElementById('modalBg').classList.remove('open'); }
 
 async function saveModal(){
-  if(currentField === 'rideRating'){
-    const ride = recentRides.find(r=>r.id===currentRideId);
-    const tier = tierForPrescription(sessionForDate(new Date(ride.ride_date+'T00:00:00')).text);
-    const auto = autoScoreRide(ride, tier);
-    const userScore = parseFloat(document.getElementById('input-userScore').value);
-    const note = document.getElementById('input-note').value;
-    await saveRideRating(currentRideId, isNaN(userScore)?null:userScore, note, auto);
+  const saveBtn = document.getElementById('btnSave');
+  const errEl = document.getElementById('modalError');
+  errEl.classList.remove('show'); errEl.textContent = '';
+  saveBtn.disabled = true;
+  const originalLabel = saveBtn.textContent;
+  saveBtn.textContent = 'Saving\u2026';
+
+  try{
+    if(currentField === 'rideRating'){
+      const ride = recentRides.find(r=>r.id===currentRideId);
+      const tier = tierForPrescription(sessionForDate(new Date(ride.ride_date+'T00:00:00')).text);
+      const auto = autoScoreRide(ride, tier);
+      const userScore = parseFloat(document.getElementById('input-userScore').value);
+      const note = document.getElementById('input-note').value;
+      const result = await saveRideRating(currentRideId, isNaN(userScore)?null:userScore, note, auto);
+      if(!result.ok){
+        errEl.textContent = 'Couldn\u2019t save \u2014 the server didn\u2019t accept that (try again in a moment).';
+        errEl.classList.add('show');
+        return;
+      }
+      closeModal();
+      render();
+      return;
+    }
+
+    const fields = FIELD_SETS[currentField];
+    for(const f of fields){
+      const raw = document.getElementById(`input-${f.key}`).value;
+      const val = f.type==='number' ? parseFloat(raw) : raw;
+      const result = await saveSetting(f.key, val);
+      if(!result.ok){
+        errEl.textContent = `Couldn\u2019t save "${f.label}" \u2014 nothing was updated. Try again in a moment.`;
+        errEl.classList.add('show');
+        return;
+      }
+      data[f.key] = val;
+    }
+    data.lastUpdated = new Date().toISOString();
+    await saveSetting('lastUpdated', data.lastUpdated);
     closeModal();
     render();
-    return;
+  } finally {
+    saveBtn.disabled = false;
+    saveBtn.textContent = originalLabel;
   }
-  const fields = FIELD_SETS[currentField];
-  for(const f of fields){
-    const raw = document.getElementById(`input-${f.key}`).value;
-    const val = f.type==='number' ? parseFloat(raw) : raw;
-    data[f.key] = val;
-    await saveSetting(f.key, val);
-  }
-  data.lastUpdated = new Date().toISOString();
-  await saveSetting('lastUpdated', data.lastUpdated);
-  closeModal();
-  render();
 }
 
 async function init(){
