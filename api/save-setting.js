@@ -56,7 +56,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const r = await fetch(`${SUPABASE_URL}/rest/v1/dashboard_settings`, {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/dashboard_settings?on_conflict=key`, {
       method: 'POST',
       headers: {
         apikey: SERVICE_KEY,
