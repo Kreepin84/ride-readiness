@@ -475,6 +475,19 @@ const TIER_BANDS = {
   hard:      { powerPct:[75,999],durMin:[30,80] } // also checked via effort/hr below
 };
 
+// Some prescriptions state an explicit duration ("Long endurance ride, Z2, 2.5\u20134 hrs")
+// that's way outside the generic tier band above. When present, use it instead \u2014
+// otherwise a prescribed 4hr epic gets penalized by a duration band built for a normal ride.
+function parseDurationRangeFromText(text){
+  const hrMatch = text.match(/(\d+(?:\.\d+)?)\s*[\u2013\-]\s*(\d+(?:\.\d+)?)\s*h(?:rs?|ours?)\b/i);
+  if(hrMatch) return [parseFloat(hrMatch[1])*60, parseFloat(hrMatch[2])*60];
+  const singleHrMatch = text.match(/\b(\d+(?:\.\d+)?)\s*h(?:rs?|ours?)\b/i);
+  if(singleHrMatch){ const h = parseFloat(singleHrMatch[1]); return [h*60*0.75, h*60*1.25]; }
+  const minMatch = text.match(/(\d+)\s*[\u2013\-]\s*(\d+)\s*min\b/i);
+  if(minMatch) return [parseFloat(minMatch[1]), parseFloat(minMatch[2])];
+  return null;
+}
+
 function bandScore(val, [lo,hi], maxPts){
   if(val==null) return null;
   if(val>=lo && val<=hi) return maxPts;
@@ -483,7 +496,7 @@ function bandScore(val, [lo,hi], maxPts){
   return Math.max(0, maxPts - (dist/span)*maxPts);
 }
 
-function autoScoreRide(ride, tier){
+function autoScoreRide(ride, tier, prescriptionText){
   const band = TIER_BANDS[tier];
   const ftp = data.ftp || 291;
   // Weighted avg power (Strava's NP-equivalent) better reflects true intensity when a ride
@@ -499,7 +512,8 @@ function autoScoreRide(ride, tier){
   if(tier==='hard' && effortPerHr!=null && effortPerHr>=25){
     powerPts = Math.max(powerPts ?? 0, 6);
   }
-  const durPts = bandScore(durMin, band.durMin, 4);
+  const explicitDurBand = prescriptionText ? parseDurationRangeFromText(prescriptionText) : null;
+  const durPts = bandScore(durMin, explicitDurBand || band.durMin, 4);
 
   const total = (powerPts||0) + (durPts||0);
   const maxPossible = (powerPts!=null?6:0) + (durPts!=null?4:0);
@@ -628,8 +642,9 @@ function renderLoadAndRides(readinessInfo){
       : (r.avg_watts ? `${Math.round(r.avg_watts)}W avg` : 'no power data');
     const d = new Date(r.ride_date+'T00:00:00').toLocaleDateString([], {weekday:'short', month:'short', day:'numeric'});
     const dateObj = new Date(r.ride_date+'T00:00:00');
-    const tier = tierForPrescription(sessionForDate(dateObj).text);
-    const auto = autoScoreRide(r, tier);
+    const prescription = sessionForDate(dateObj).text;
+    const tier = tierForPrescription(prescription);
+    const auto = autoScoreRide(r, tier, prescription);
     const rating = rideRatings[r.id];
     const scoreLabel = rating && rating.user_score!=null
       ? `${rating.user_score}/10 <span class="sub-n" style="text-align:right;">your rating</span>`
@@ -760,8 +775,9 @@ function openRideRating(rideId){
   currentField = 'rideRating';
   currentRideId = rideId;
   const ride = recentRides.find(r=>r.id===rideId);
-  const tier = tierForPrescription(sessionForDate(new Date(ride.ride_date+'T00:00:00')).text);
-  const auto = autoScoreRide(ride, tier);
+  const prescription = sessionForDate(new Date(ride.ride_date+'T00:00:00')).text;
+  const tier = tierForPrescription(prescription);
+  const auto = autoScoreRide(ride, tier, prescription);
   const existing = rideRatings[rideId] || {};
   document.getElementById('modalTitle').textContent = `Rate: ${ride.name || 'Ride'}`;
   document.getElementById('modalFields').innerHTML = `
@@ -790,8 +806,9 @@ async function saveModal(){
   try{
     if(currentField === 'rideRating'){
       const ride = recentRides.find(r=>r.id===currentRideId);
-      const tier = tierForPrescription(sessionForDate(new Date(ride.ride_date+'T00:00:00')).text);
-      const auto = autoScoreRide(ride, tier);
+      const prescription = sessionForDate(new Date(ride.ride_date+'T00:00:00')).text;
+      const tier = tierForPrescription(prescription);
+      const auto = autoScoreRide(ride, tier, prescription);
       const userScore = parseFloat(document.getElementById('input-userScore').value);
       const note = document.getElementById('input-note').value;
       const result = await saveRideRating(currentRideId, isNaN(userScore)?null:userScore, note, auto);
