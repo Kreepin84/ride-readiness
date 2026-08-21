@@ -161,9 +161,11 @@
 <div class="section-title" style="margin-top:16px;">Rides &amp; Training Load</div>
 <div class="card-note" style="padding:0 20px 8px;">Auto-synced from Strava via the Vercel cron job. Relative Effort drives the load component of the readiness score above. Tap a ride to rate it vs. what was prescribed.</div>
 <div class="grid" id="loadGrid"></div>
-<div class="card readonly" id="volumeChartCard" style="margin:0 20px 14px;">
+<div class="card readonly" id="volumeChartCard" style="margin:18px 20px 14px;">
+  <div id="weeklyScoreRow" style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:12px;"></div>
   <div class="card-label">Weekly Volume (hrs)</div>
-  <div id="volumeChart" style="margin-top:6px;"></div>
+  <div class="card-note" style="margin-top:2px;">Bar colour = hours vs. that week's roster-based riding capacity (green ≥90%, amber ≥50%, red below).</div>
+  <div id="volumeChart" style="margin-top:10px;"></div>
 </div>
 <div class="log" id="ridesLog"></div>
 
@@ -281,6 +283,15 @@ function sessionForDate(dateObj){
     phaseLabel: phase.charAt(0).toUpperCase()+phase.slice(1)+ ' (wk '+week+'/12)',
     isHard: (block!=='Nightshift Block') && (idx===1 || idx===2 || (block==='Dayshift Block'&&idx===0))
   };
+}
+
+// Rough daily riding-time capacity based on which roster block a date falls in —
+// used to set a realistic weekly volume target per 7-day bucket, rather than one flat number.
+function dailyCapacityHours(dateObj){
+  const block = sessionForDate(dateObj).block;
+  if(block === 'Off Block') return 2.5;
+  if(block === 'Nightshift Block') return 0.75;
+  return 1.0; // Dayshift Block
 }
 
 // ---- Supabase data access ----
@@ -426,6 +437,9 @@ function weeklyVolumeTrend(){
 }
 
 // Buckets rides into the last N complete weeks (most recent 7-day block first) for a bar chart.
+// Each bucket also gets a roster-based riding-capacity target, so the chart can show whether
+// a given week's volume was "on track" relative to what was realistically available that week
+// (an off-block-heavy week has a much bigger achievable target than a nightshift week).
 function weeklyVolumeSeries(weeks=8){
   const now = new Date(); now.setHours(0,0,0,0);
   const buckets = [];
@@ -435,24 +449,31 @@ function weeklyVolumeSeries(weeks=8){
     const secs = recentRides
       .filter(r => { const d = new Date(r.ride_date+'T00:00:00'); return d >= start && d < end; })
       .reduce((s,r) => s + (r.moving_time_s||0), 0);
-    buckets.push({ label: i===0 ? 'This wk' : `-${i}w`, hours: secs/3600 });
+    let target = 0;
+    for(let d = new Date(start); d < end; d.setDate(d.getDate()+1)){
+      target += dailyCapacityHours(new Date(d));
+    }
+    buckets.push({ label: i===0 ? 'This wk' : `-${i}w`, hours: secs/3600, target });
   }
   return buckets;
 }
 
-function barChartSVG(series, height=90){
+// height has extra top padding reserved so a tall bar's value label never escapes
+// the chart's own bounding box and overlaps whatever sits above it on the page.
+function barChartSVG(series, height=100){
   const max = Math.max(...series.map(s=>s.hours), 1);
   const barW = 100/series.length;
   const bars = series.map((s,i)=>{
-    const h = Math.max(2, (s.hours/max)*(height-18));
+    const h = Math.max(2, (s.hours/max)*(height-34));
     const x = i*barW;
-    const isLast = i === series.length-1;
-    const color = isLast ? 'var(--amber)' : 'var(--cyan)';
-    return `<rect x="${x+barW*0.18}%" y="${height-h-16}" width="${barW*0.64}%" height="${h}" rx="3" fill="${color}" opacity="${isLast?1:0.75}"/>
-      <text x="${x+barW*0.5}%" y="${height-h-22}" font-size="9" fill="var(--text)" text-anchor="middle" font-family="JetBrains Mono, monospace">${s.hours.toFixed(1)}</text>
+    const ratio = s.target>0 ? s.hours/s.target : 1;
+    const color = ratio>=0.9 ? 'var(--cyan)' : ratio>=0.5 ? 'var(--amber)' : 'var(--red)';
+    const labelY = Math.max(11, height-h-22);
+    return `<rect x="${x+barW*0.18}%" y="${height-h-16}" width="${barW*0.64}%" height="${h}" rx="3" fill="${color}" opacity="0.9"/>
+      <text x="${x+barW*0.5}%" y="${labelY}" font-size="9" fill="var(--text)" text-anchor="middle" font-family="JetBrains Mono, monospace">${s.hours.toFixed(1)}</text>
       <text x="${x+barW*0.5}%" y="${height-2}" font-size="8" fill="var(--muted)" text-anchor="middle" font-family="JetBrains Mono, monospace">${s.label}</text>`;
   }).join('');
-  return `<svg width="100%" height="${height}" viewBox="0 0 300 ${height}" preserveAspectRatio="none" style="overflow:visible;">${bars}</svg>`;
+  return `<svg width="100%" height="${height}" viewBox="0 0 300 ${height}" preserveAspectRatio="none">${bars}</svg>`;
 }
 
 // ---- Ride vs. prescription auto-scoring ----
@@ -475,15 +496,15 @@ const TIER_BANDS = {
   hard:      { powerPct:[75,999],durMin:[30,80] } // also checked via effort/hr below
 };
 
-// Some prescriptions state an explicit duration ("Long endurance ride, Z2, 2.5\u20134 hrs")
-// that's way outside the generic tier band above. When present, use it instead \u2014
+// Some prescriptions state an explicit duration ("Long endurance ride, Z2, 2.5–4 hrs")
+// that's way outside the generic tier band above. When present, use it instead —
 // otherwise a prescribed 4hr epic gets penalized by a duration band built for a normal ride.
 function parseDurationRangeFromText(text){
-  const hrMatch = text.match(/(\d+(?:\.\d+)?)\s*[\u2013\-]\s*(\d+(?:\.\d+)?)\s*h(?:rs?|ours?)\b/i);
+  const hrMatch = text.match(/(\d+(?:\.\d+)?)\s*[–\-]\s*(\d+(?:\.\d+)?)\s*h(?:rs?|ours?)\b/i);
   if(hrMatch) return [parseFloat(hrMatch[1])*60, parseFloat(hrMatch[2])*60];
   const singleHrMatch = text.match(/\b(\d+(?:\.\d+)?)\s*h(?:rs?|ours?)\b/i);
   if(singleHrMatch){ const h = parseFloat(singleHrMatch[1]); return [h*60*0.75, h*60*1.25]; }
-  const minMatch = text.match(/(\d+)\s*[\u2013\-]\s*(\d+)\s*min\b/i);
+  const minMatch = text.match(/(\d+)\s*[–\-]\s*(\d+)\s*min\b/i);
   if(minMatch) return [parseFloat(minMatch[1]), parseFloat(minMatch[2])];
   return null;
 }
@@ -500,7 +521,7 @@ function autoScoreRide(ride, tier, prescriptionText){
   const band = TIER_BANDS[tier];
   const ftp = data.ftp || 291;
   // Weighted avg power (Strava's NP-equivalent) better reflects true intensity when a ride
-  // has surges/coasting mixed in \u2014 prefer it, fall back to plain average for older synced rides.
+  // has surges/coasting mixed in — prefer it, fall back to plain average for older synced rides.
   const powerForScoring = ride.weighted_avg_watts || ride.avg_watts;
   const powerPct = powerForScoring ? (powerForScoring/ftp*100) : null;
   const durMin = ride.moving_time_s ? ride.moving_time_s/60 : null;
@@ -519,6 +540,27 @@ function autoScoreRide(ride, tier, prescriptionText){
   const maxPossible = (powerPts!=null?6:0) + (durPts!=null?4:0);
   const scaled = maxPossible>0 ? (total/maxPossible)*10 : null;
   return scaled!=null ? Math.round(scaled*10)/10 : null;
+}
+
+// Resolves a single ride down to the score shown in the log/weekly average:
+// the rider's own rating if they've given one, otherwise the auto-estimate.
+function computeRideScore(r){
+  const dateObj = new Date(r.ride_date+'T00:00:00');
+  const prescription = sessionForDate(dateObj).text;
+  const tier = tierForPrescription(prescription);
+  const auto = autoScoreRide(r, tier, prescription);
+  const rating = rideRatings[r.id];
+  return (rating && rating.user_score!=null) ? rating.user_score : auto;
+}
+
+function weeklyAvgScore(){
+  const cutoff = new Date(); cutoff.setDate(cutoff.getDate()-7); cutoff.setHours(0,0,0,0);
+  const scores = recentRides
+    .filter(r => new Date(r.ride_date+'T00:00:00') >= cutoff)
+    .map(computeRideScore)
+    .filter(s => s!=null);
+  if(!scores.length) return null;
+  return scores.reduce((a,b)=>a+b,0)/scores.length;
 }
 
 function bandFor(r){
@@ -626,8 +668,15 @@ function renderLoadAndRides(readinessInfo){
         <div><div class="card-label">4-wk Avg / Week</div><div class="card-num">${trend.rolling4wkAvg.toFixed(1)}<small>hrs (target ${data.weeklyHoursTarget}h)</small></div></div>
         <div class="arc-wrap">${arcSVG(pctToTarget, scoreColor(pctToTarget))}</div>
       </div>
-      <div class="card-note">This week so far: ${trend.hrsThisWeek.toFixed(1)}h. Rolling average smooths out race weeks vs. nightshift weeks \u2014 track this trending up over the next 9\u201312 months toward the next W/kg tier.</div>
+      <div class="card-note">This week so far: ${trend.hrsThisWeek.toFixed(1)}h. Rolling average smooths out race weeks vs. nightshift weeks — track this trending up over the next 9–12 months toward the next W/kg tier.</div>
     </div>`;
+
+  const avgScore = weeklyAvgScore();
+  const avgScoreLabel = avgScore!=null
+    ? `${avgScore.toFixed(1)}<small>/10 avg this wk</small>`
+    : `—<small>no rated rides yet</small>`;
+  document.getElementById('weeklyScoreRow').innerHTML =
+    `<div><div class="card-label" style="margin-bottom:4px;">This Week</div><div class="card-num" style="font-size:22px;">${avgScoreLabel}</div></div>`;
 
   document.getElementById('volumeChart').innerHTML = barChartSVG(weeklyVolumeSeries(8));
 
@@ -638,7 +687,7 @@ function renderLoadAndRides(readinessInfo){
   const rows = recentRides.slice(0,8).map(r=>{
     const mins = r.moving_time_s ? Math.round(r.moving_time_s/60) : '—';
     const wattsDisplay = r.weighted_avg_watts
-      ? `${Math.round(r.weighted_avg_watts)}W \u00b7 wtd (${Math.round(r.avg_watts||0)}W avg)`
+      ? `${Math.round(r.weighted_avg_watts)}W · wtd (${Math.round(r.avg_watts||0)}W avg)`
       : (r.avg_watts ? `${Math.round(r.avg_watts)}W avg` : 'no power data');
     const d = new Date(r.ride_date+'T00:00:00').toLocaleDateString([], {weekday:'short', month:'short', day:'numeric'});
     const dateObj = new Date(r.ride_date+'T00:00:00');
@@ -801,7 +850,7 @@ async function saveModal(){
   errEl.classList.remove('show'); errEl.textContent = '';
   saveBtn.disabled = true;
   const originalLabel = saveBtn.textContent;
-  saveBtn.textContent = 'Saving\u2026';
+  saveBtn.textContent = 'Saving…';
 
   try{
     if(currentField === 'rideRating'){
@@ -813,7 +862,7 @@ async function saveModal(){
       const note = document.getElementById('input-note').value;
       const result = await saveRideRating(currentRideId, isNaN(userScore)?null:userScore, note, auto);
       if(!result.ok){
-        errEl.textContent = 'Couldn\u2019t save \u2014 the server didn\u2019t accept that (try again in a moment).';
+        errEl.textContent = 'Couldn\u2019t save — the server didn\u2019t accept that (try again in a moment).';
         errEl.classList.add('show');
         return;
       }
@@ -828,7 +877,7 @@ async function saveModal(){
       const val = f.type==='number' ? parseFloat(raw) : raw;
       const result = await saveSetting(f.key, val);
       if(!result.ok){
-        errEl.textContent = `Couldn\u2019t save "${f.label}" \u2014 nothing was updated. Try again in a moment.`;
+        errEl.textContent = `Couldn\u2019t save "${f.label}" — nothing was updated. Try again in a moment.`;
         errEl.classList.add('show');
         return;
       }
