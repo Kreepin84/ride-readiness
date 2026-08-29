@@ -7,7 +7,6 @@
 <link rel="manifest" href="/manifest.json">
 <meta name="theme-color" content="#14171a">
 <link rel="icon" href="/ic/icon-192.png" type="image/png">
-<!-- iOS home screen support -->
 <link rel="apple-touch-icon" href="/ic/icon-192.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -46,7 +45,6 @@
   svg.dial{width:100%; height:100%; display:block;}
   .needle{transform-origin:150px 150px; transition:transform 1.1s cubic-bezier(.22,1,.36,1);}
 
-  /* readout now sits BELOW the gauge, in normal document flow, so the needle never overlaps it */
   .dial-readout{margin-top:14px; text-align:center; max-width:300px;}
   .dial-num{font-family:'JetBrains Mono',monospace; font-size:44px; font-weight:800; line-height:1;}
   .dial-label{font-size:11px; color:var(--muted); letter-spacing:.14em; text-transform:uppercase; margin-top:2px;}
@@ -209,18 +207,17 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 const DEFAULTS = {
   torqueEff: 76,
-  ftp: 291,
-  vo2max: 55,
+  ftp: 297,
+  vo2max: 57,
   weight: 83,
   rosterAnchor: '2026-07-05',
   programStart: '2026-07-06',
-  // readiness formula tuning — all editable via Standing Numbers
-  hrExcellent: 48,     // overnight avg HR that scores 100
-  hrPoor: 68,          // overnight avg HR that scores 0
-  weeklyLoadTarget: 300, // trailing-7-day sum of Strava Relative Effort that represents a "full tunnel" (100%)
-  weeklyHoursTarget: 7.4, // target hrs/week (sustained) toward next W/kg tier
-  ftpTestDate: '2026-06-23',   // date of last FTP test
-  ftpTestIntervalWeeks: 12,    // how often to retest (~3 months by default)
+  hrExcellent: 48,
+  hrPoor: 68,
+  weeklyLoadTarget: 300,
+  weeklyHoursTarget: 7.4,
+  ftpTestDate: '2026-06-23',
+  ftpTestIntervalWeeks: 12,
   lastUpdated: null
 };
 
@@ -229,7 +226,7 @@ let currentField = null;
 let currentRideId = null;
 let latestSleep = null;
 let recentRides = [];
-let rideRatings = {}; // ride_id -> {user_score, auto_score, note}
+let rideRatings = {};
 
 // ---- Session library ----
 const NIGHT_SESSIONS = [
@@ -259,6 +256,10 @@ const OFF_SESSIONS = {
           "Recovery spin + skills/cadence work."]
 };
 
+const CCCC_DATES = ['2026-07-11','2026-07-25','2026-08-08','2026-08-22','2026-09-12','2026-09-26'];
+const HEZ_URL = 'https://buncheur.com/races?author=Newcastle+Hunter+CC&option_22=Race%2CBunch+Ride&option_23=Road%2CTrack';
+const CCCC_URL = 'https://entryboss.cc/calendar/centralcoast';
+
 function phaseForWeek(week){ if(week<=4) return 'base'; if(week<=8) return 'build'; return 'peak'; }
 function programWeek(dateObj){
   const start = new Date(data.programStart+'T00:00:00');
@@ -266,6 +267,12 @@ function programWeek(dateObj){
   const wk = Math.floor(Math.max(days,0)/7)+1;
   return Math.min(Math.max(wk,1),12);
 }
+
+// Saturdays that fall in an Off Block are treated as race days — HEZ runs weekly and CCCC is
+// fortnightly on fixed dates, so the *actual* planned session on those Saturdays is racing, not
+// whatever the generic rotation slot would otherwise prescribe. Without this override, a full-gas
+// race gets auto-scored against a mismatched "recovery spin" band and comes out looking terrible
+// even when the ride itself was excellent.
 function sessionForDate(dateObj){
   const anchor = new Date(data.rosterAnchor+'T00:00:00');
   const diffDays = Math.floor((dateObj-anchor)/86400000);
@@ -278,20 +285,29 @@ function sessionForDate(dateObj){
   else if(cyclePos<12){ block='Dayshift Block'; idx=cyclePos-8; text=DAY_SESSIONS[idx]; }
   else { block='Off Block'; idx=cyclePos-12; text=OFF_SESSIONS[phase][idx]; }
   const dayLabels = ['Day 1','Day 2','Day 3','Day 4'];
+  let isHard = (block!=='Nightshift Block') && (idx===1 || idx===2 || (block==='Dayshift Block'&&idx===0));
+
+  if(block==='Off Block' && dateObj.getDay()===6){
+    const dateKey = dateObj.toISOString().slice(0,10);
+    const isCCCC = CCCC_DATES.includes(dateKey);
+    text = isCCCC
+      ? 'Race day — HEZ + CCCC racing, 60–100 min, full gas.'
+      : 'Race day — HEZ racing, 45–90 min, full gas.';
+    isHard = true;
+  }
+
   return {
     block, dayLabel:dayLabels[idx], text,
     phaseLabel: phase.charAt(0).toUpperCase()+phase.slice(1)+ ' (wk '+week+'/12)',
-    isHard: (block!=='Nightshift Block') && (idx===1 || idx===2 || (block==='Dayshift Block'&&idx===0))
+    isHard
   };
 }
 
-// Rough daily riding-time capacity based on which roster block a date falls in —
-// used to set a realistic weekly volume target per 7-day bucket, rather than one flat number.
 function dailyCapacityHours(dateObj){
   const block = sessionForDate(dateObj).block;
   if(block === 'Off Block') return 2.5;
   if(block === 'Nightshift Block') return 0.75;
-  return 1.0; // Dayshift Block
+  return 1.0;
 }
 
 // ---- Supabase data access ----
@@ -382,7 +398,6 @@ async function saveRideRating(rideId, userScore, note, autoScore){
 }
 
 // ---- Readiness formula ----
-// sleep 40% + overnight HR 25% + training load (from rides) 35%, hard-capped at ~50 if sleep < 5h
 function weeklyRelativeEffort(){
   const cutoff = new Date(); cutoff.setDate(cutoff.getDate()-7); cutoff.setHours(0,0,0,0);
   return recentRides
@@ -395,7 +410,7 @@ function computeReadiness(){
   const overnightHr = latestSleep && latestSleep.avg_heart_rate!=null ? Number(latestSleep.avg_heart_rate) : null;
   const weeklyEffort = weeklyRelativeEffort();
 
-  const sleepScore = sleepHrs!=null ? clamp(sleepHrs/8*100, 0, 100) : 60; // neutral-ish fallback if no data yet
+  const sleepScore = sleepHrs!=null ? clamp(sleepHrs/8*100, 0, 100) : 60;
   const hrRange = Math.max(1, data.hrPoor - data.hrExcellent);
   const hrScore = overnightHr!=null ? clamp(100 - (overnightHr - data.hrExcellent)/hrRange*100, 0, 100) : 60;
   const loadPct = clamp(weeklyEffort / Math.max(1,data.weeklyLoadTarget) * 100, 0, 100);
@@ -418,7 +433,7 @@ function computeReadiness(){
 
 function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
 
-// ---- Weekly volume trend (rolling average toward W/kg progression target) ----
+// ---- Weekly volume trend ----
 function weeklyVolumeTrend(){
   const now = new Date();
   const cutoff7 = new Date(now); cutoff7.setDate(cutoff7.getDate()-7); cutoff7.setHours(0,0,0,0);
@@ -436,10 +451,6 @@ function weeklyVolumeTrend(){
   return { hrsThisWeek, rolling4wkAvg };
 }
 
-// Buckets rides into the last N complete weeks (most recent 7-day block first) for a bar chart.
-// Each bucket also gets a roster-based riding-capacity target, so the chart can show whether
-// a given week's volume was "on track" relative to what was realistically available that week
-// (an off-block-heavy week has a much bigger achievable target than a nightshift week).
 function weeklyVolumeSeries(weeks=8){
   const now = new Date(); now.setHours(0,0,0,0);
   const buckets = [];
@@ -458,8 +469,6 @@ function weeklyVolumeSeries(weeks=8){
   return buckets;
 }
 
-// height has extra top padding reserved so a tall bar's value label never escapes
-// the chart's own bounding box and overlaps whatever sits above it on the page.
 function barChartSVG(series, height=100){
   const max = Math.max(...series.map(s=>s.hours), 1);
   const barW = 100/series.length;
@@ -477,9 +486,6 @@ function barChartSVG(series, height=100){
 }
 
 // ---- Ride vs. prescription auto-scoring ----
-// Heuristic only: Strava sync gives ride averages, not interval-level data, so this
-// estimates a 1-10 fit between what was prescribed that day and what the ride's
-// average power / duration / effort actually looked like. Always editable by hand.
 function tierForPrescription(text){
   const t = text.toLowerCase();
   if(t.includes('vo2') || t.includes('race') || t.includes('anaerobic')) return 'hard';
@@ -493,12 +499,9 @@ const TIER_BANDS = {
   easy:      { powerPct:[0,55],  durMin:[15,45] },
   z2:        { powerPct:[55,75], durMin:[45,100] },
   threshold: { powerPct:[70,90], durMin:[30,70] },
-  hard:      { powerPct:[75,999],durMin:[30,80] } // also checked via effort/hr below
+  hard:      { powerPct:[75,999],durMin:[30,80] }
 };
 
-// Some prescriptions state an explicit duration ("Long endurance ride, Z2, 2.5–4 hrs")
-// that's way outside the generic tier band above. When present, use it instead —
-// otherwise a prescribed 4hr epic gets penalized by a duration band built for a normal ride.
 function parseDurationRangeFromText(text){
   const hrMatch = text.match(/(\d+(?:\.\d+)?)\s*[–\-]\s*(\d+(?:\.\d+)?)\s*h(?:rs?|ours?)\b/i);
   if(hrMatch) return [parseFloat(hrMatch[1])*60, parseFloat(hrMatch[2])*60];
@@ -520,16 +523,12 @@ function bandScore(val, [lo,hi], maxPts){
 function autoScoreRide(ride, tier, prescriptionText){
   const band = TIER_BANDS[tier];
   const ftp = data.ftp || 291;
-  // Weighted avg power (Strava's NP-equivalent) better reflects true intensity when a ride
-  // has surges/coasting mixed in — prefer it, fall back to plain average for older synced rides.
   const powerForScoring = ride.weighted_avg_watts || ride.avg_watts;
   const powerPct = powerForScoring ? (powerForScoring/ftp*100) : null;
   const durMin = ride.moving_time_s ? ride.moving_time_s/60 : null;
   const effortPerHr = (ride.relative_effort && ride.moving_time_s) ? ride.relative_effort/(ride.moving_time_s/3600) : null;
 
   let powerPts = bandScore(powerPct, band.powerPct, 6);
-  // For 'hard' days, a high effort-per-hour also counts as a match even if avg power looks moderate
-  // (VO2 intervals get diluted by recovery segments in the average).
   if(tier==='hard' && effortPerHr!=null && effortPerHr>=25){
     powerPts = Math.max(powerPts ?? 0, 6);
   }
@@ -542,8 +541,6 @@ function autoScoreRide(ride, tier, prescriptionText){
   return scaled!=null ? Math.round(scaled*10)/10 : null;
 }
 
-// Resolves a single ride down to the score shown in the log/weekly average:
-// the rider's own rating if they've given one, otherwise the auto-estimate.
 function computeRideScore(r){
   const dateObj = new Date(r.ride_date+'T00:00:00');
   const prescription = sessionForDate(dateObj).text;
@@ -608,10 +605,6 @@ function renderSessionCard(dateObj, label){
     </div>`;
 }
 
-const CCCC_DATES = ['2026-07-11','2026-07-25','2026-08-08','2026-08-22','2026-09-12','2026-09-26'];
-const HEZ_URL = 'https://buncheur.com/races?author=Newcastle+Hunter+CC&option_22=Race%2CBunch+Ride&option_23=Road%2CTrack';
-const CCCC_URL = 'https://entryboss.cc/calendar/centralcoast';
-
 function renderRaceCalendar(){
   const today = new Date(); today.setHours(0,0,0,0);
   let html = '', shown = 0;
@@ -637,7 +630,6 @@ function renderRaceCalendar(){
 }
 
 function renderLoadAndRides(readinessInfo){
-  // Weekly load card + a "days since hardest effort" style card
   const last7 = recentRides.filter(r=>{
     const cutoff = new Date(); cutoff.setDate(cutoff.getDate()-7); cutoff.setHours(0,0,0,0);
     return new Date(r.ride_date+'T00:00:00') >= cutoff;
