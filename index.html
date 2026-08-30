@@ -211,7 +211,6 @@ const DEFAULTS = {
   vo2max: 57,
   weight: 83,
   rosterAnchor: '2026-07-05',
-  programStart: '2026-07-06',
   hrExcellent: 48,
   hrPoor: 68,
   weeklyLoadTarget: 300,
@@ -236,7 +235,7 @@ const NIGHT_SESSIONS = [
   "Rest — final night, prioritize sleep going into your off block."
 ];
 const DAY_SESSIONS = [
-  "Short VO2 intervals: 4–5 x 3min Z5, fits ~45–60 min around your shift.",
+  "Easy Z1–Z2 spin only, 30–45 min, or rest — first day back on shift.",
   "Steady Z2 endurance, 60–75 min.",
   "Threshold: 2 x 15min Z4.",
   "Easy spin or rest, heading into next off block."
@@ -256,16 +255,22 @@ const OFF_SESSIONS = {
           "Recovery spin + skills/cadence work."]
 };
 
+// Full 16-day roster rotations (nightshift + off + dayshift + off) that make up the
+// periodized plan, replacing the old fixed 12-calendar-week structure. Base -> Build -> Peak,
+// 2 rotations per phase by default.
+const TOTAL_ROTATIONS = 6;
+const ROTATION_DAYS = 16;
+
 const CCCC_DATES = ['2026-07-11','2026-07-25','2026-08-08','2026-08-22','2026-09-12','2026-09-26'];
 const HEZ_URL = 'https://buncheur.com/races?author=Newcastle+Hunter+CC&option_22=Race%2CBunch+Ride&option_23=Road%2CTrack';
 const CCCC_URL = 'https://entryboss.cc/calendar/centralcoast';
 
-function phaseForWeek(week){ if(week<=4) return 'base'; if(week<=8) return 'build'; return 'peak'; }
-function programWeek(dateObj){
-  const start = new Date(data.programStart+'T00:00:00');
-  const days = Math.floor((dateObj-start)/86400000);
-  const wk = Math.floor(Math.max(days,0)/7)+1;
-  return Math.min(Math.max(wk,1),12);
+function phaseForRotation(rotation){ if(rotation<=2) return 'base'; if(rotation<=4) return 'build'; return 'peak'; }
+function programRotation(dateObj){
+  const anchor = new Date(data.rosterAnchor+'T00:00:00');
+  const days = Math.floor((dateObj-anchor)/86400000);
+  const rot = Math.floor(Math.max(days,0)/ROTATION_DAYS)+1;
+  return Math.min(Math.max(rot,1), TOTAL_ROTATIONS);
 }
 
 // Saturdays that fall in an Off Block are treated as race days — HEZ runs weekly and CCCC is
@@ -277,8 +282,8 @@ function sessionForDate(dateObj){
   const anchor = new Date(data.rosterAnchor+'T00:00:00');
   const diffDays = Math.floor((dateObj-anchor)/86400000);
   const cyclePos = ((diffDays % 16)+16) % 16;
-  const week = programWeek(dateObj);
-  const phase = phaseForWeek(week);
+  const rotation = programRotation(dateObj);
+  const phase = phaseForRotation(rotation);
   let block, idx, text;
   // The Off Block at cyclePos 4-7 always immediately follows the Nightshift Block (0-3) in the
   // fixed roster rotation. The first two days of that specific block default to easy riding only —
@@ -295,7 +300,7 @@ function sessionForDate(dateObj){
   else if(cyclePos<12){ block='Dayshift Block'; idx=cyclePos-8; text=DAY_SESSIONS[idx]; }
   else { block='Off Block'; idx=cyclePos-12; text=OFF_SESSIONS[phase][idx]; }
   const dayLabels = ['Day 1','Day 2','Day 3','Day 4'];
-  let isHard = (block!=='Nightshift Block') && (idx===1 || idx===2 || (block==='Dayshift Block'&&idx===0));
+  let isHard = (block!=='Nightshift Block') && (idx===1 || idx===2);
   if(isPostNightshiftOffBlock && idx<2) isHard = false;
 
   if(block==='Off Block'){
@@ -323,7 +328,7 @@ function sessionForDate(dateObj){
 
   return {
     block, dayLabel:dayLabels[idx], text,
-    phaseLabel: phase.charAt(0).toUpperCase()+phase.slice(1)+ ' (wk '+week+'/12)',
+    phaseLabel: phase.charAt(0).toUpperCase()+phase.slice(1)+ ' (rotation '+rotation+'/'+TOTAL_ROTATIONS+')',
     isHard
   };
 }
@@ -815,10 +820,10 @@ function render(){
     <div class="log-row"><span>Next FTP test</span><span class="n" style="color:${dueColor}">${nextDue.toISOString().slice(0,10)} (${dueLabel})</span></div>
     <div class="log-row"><span>VO2max estimate</span><span class="n">${data.vo2max}</span></div>
     <div class="log-row"><span>Weight</span><span class="n">${data.weight} kg</span></div>
-    <div class="log-row"><span>Program week</span><span class="n">${programWeek(new Date())}/12</span></div>
+    <div class="log-row"><span>Program rotation</span><span class="n">${programRotation(new Date())}/${TOTAL_ROTATIONS}</span></div>
     <div class="log-row"><span>Readiness HR range</span><span class="n">${data.hrExcellent}–${data.hrPoor} bpm</span></div>
     <div class="log-row"><span>Weekly load target</span><span class="n">${data.weeklyLoadTarget} effort pts</span></div>
-    <div class="edit-btn" onclick="openModal('standing','Standing Numbers')">Update FTP / VO2max / Weight / Program Start / Readiness Tuning</div>
+    <div class="edit-btn" onclick="openModal('standing','Standing Numbers')">Update FTP / VO2max / Weight / Roster Anchor / Readiness Tuning</div>
   `;
 
   loadWeather();
@@ -831,7 +836,6 @@ const FIELD_SETS = {
     {key:'vo2max', label:'VO2max estimate', val:()=>data.vo2max, type:'number'},
     {key:'weight', label:'Weight (kg)', val:()=>data.weight, type:'number'},
     {key:'rosterAnchor', label:'First day of a nightshift block (YYYY-MM-DD)', val:()=>data.rosterAnchor, type:'text'},
-    {key:'programStart', label:'Week 1 start date of 12-wk plan (YYYY-MM-DD)', val:()=>data.programStart, type:'text'},
     {key:'hrExcellent', label:'Overnight HR that scores 100 (fully recovered)', val:()=>data.hrExcellent, type:'number'},
     {key:'hrPoor', label:'Overnight HR that scores 0 (poor recovery)', val:()=>data.hrPoor, type:'number'},
     {key:'weeklyLoadTarget', label:'7-day Relative Effort sum = "full tunnel" (100%)', val:()=>data.weeklyLoadTarget, type:'number'},
