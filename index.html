@@ -280,20 +280,45 @@ function sessionForDate(dateObj){
   const week = programWeek(dateObj);
   const phase = phaseForWeek(week);
   let block, idx, text;
+  // The Off Block at cyclePos 4-7 always immediately follows the Nightshift Block (0-3) in the
+  // fixed roster rotation. The first two days of that specific block default to easy riding only —
+  // the body's still catching up on sleep debt right off nights, so no structured hard session
+  // gets prescribed there regardless of where it'd otherwise fall in the base/build/peak rotation.
+  const isPostNightshiftOffBlock = (cyclePos>=4 && cyclePos<8);
   if(cyclePos<4){ block='Nightshift Block'; idx=cyclePos; text=NIGHT_SESSIONS[idx]; }
-  else if(cyclePos<8){ block='Off Block'; idx=cyclePos-4; text=OFF_SESSIONS[phase][idx]; }
+  else if(cyclePos<8){
+    block='Off Block'; idx=cyclePos-4;
+    text = (idx<2)
+      ? "Easy Z1–Z2 riding only, 45–90 min — body's still catching up from nightshift, no hard efforts."
+      : OFF_SESSIONS[phase][idx];
+  }
   else if(cyclePos<12){ block='Dayshift Block'; idx=cyclePos-8; text=DAY_SESSIONS[idx]; }
   else { block='Off Block'; idx=cyclePos-12; text=OFF_SESSIONS[phase][idx]; }
   const dayLabels = ['Day 1','Day 2','Day 3','Day 4'];
   let isHard = (block!=='Nightshift Block') && (idx===1 || idx===2 || (block==='Dayshift Block'&&idx===0));
+  if(isPostNightshiftOffBlock && idx<2) isHard = false;
 
-  if(block==='Off Block' && dateObj.getDay()===6){
-    const dateKey = dateObj.toISOString().slice(0,10);
-    const isCCCC = CCCC_DATES.includes(dateKey);
-    text = isCCCC
-      ? 'Race day — HEZ + CCCC racing, 60–100 min, full gas.'
-      : 'Race day — HEZ racing, 45–90 min, full gas.';
-    isHard = true;
+  if(block==='Off Block'){
+    const raceSat = findRaceSaturdayInBlock(dateObj);
+    if(raceSat){
+      const key = dateObj.toISOString().slice(0,10);
+      const raceKey = raceSat.toISOString().slice(0,10);
+      const dayAfter = new Date(raceSat); dayAfter.setDate(dayAfter.getDate()+1);
+      const dayAfterKey = dayAfter.toISOString().slice(0,10);
+      if(key===raceKey){
+        const isCCCC = CCCC_DATES.includes(raceKey);
+        text = isCCCC
+          ? 'Race day — HEZ + CCCC racing, 60–100 min, full gas.'
+          : 'Race day — HEZ racing, 45–90 min, full gas.';
+        isHard = true;
+      } else if(key===dayAfterKey){
+        text = 'Z1 recovery spin, 30–60 min, very easy legs only after racing.';
+        isHard = false;
+      } else {
+        text = 'Z2 endurance, 90–150 min, steady aerobic — staying fresh for or recovering from the weekend race.';
+        isHard = false;
+      }
+    }
   }
 
   return {
@@ -301,6 +326,23 @@ function sessionForDate(dateObj){
     phaseLabel: phase.charAt(0).toUpperCase()+phase.slice(1)+ ' (wk '+week+'/12)',
     isHard
   };
+}
+
+// Given any date, finds the Saturday (if any) that falls within that date's current
+// Off Block — since the 16-day roster cycle drifts against the 7-day week, not every
+// Off Block contains a Saturday. Returns null if this block has no raceable weekend.
+function findRaceSaturdayInBlock(dateObj){
+  const anchor = new Date(data.rosterAnchor+'T00:00:00');
+  const diffDays = Math.floor((dateObj-anchor)/86400000);
+  const cyclePos = ((diffDays % 16)+16) % 16;
+  if(!((cyclePos>=4 && cyclePos<8) || (cyclePos>=12 && cyclePos<16))) return null;
+  const blockStartOffset = cyclePos>=12 ? 12 : 4;
+  const blockStart = new Date(dateObj); blockStart.setDate(blockStart.getDate() - (cyclePos - blockStartOffset));
+  for(let i=0;i<4;i++){
+    const d = new Date(blockStart); d.setDate(d.getDate()+i);
+    if(d.getDay()===6) return d;
+  }
+  return null;
 }
 
 function dailyCapacityHours(dateObj){
