@@ -162,7 +162,7 @@
 <div class="card readonly" id="volumeChartCard" style="margin:18px 20px 14px;">
   <div id="weeklyScoreRow" style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:12px;"></div>
   <div class="card-label">Weekly Volume (hrs)</div>
-  <div class="card-note" style="margin-top:2px;">Bar colour = hours vs. that week's roster-based riding capacity (green ≥90%, amber ≥50%, red below).</div>
+  <div class="card-note" style="margin-top:2px;">Bar height = hours ridden. Bar colour = how well that week's rides matched what was prescribed (cyan ≥8 avg, amber ≥6, red below).</div>
   <div id="volumeChart" style="margin-top:10px;"></div>
 </div>
 <div class="log" id="ridesLog"></div>
@@ -504,14 +504,17 @@ function weeklyVolumeSeries(weeks=8){
   for(let i=weeks-1; i>=0; i--){
     const end = new Date(now); end.setDate(end.getDate() - i*7);
     const start = new Date(end); start.setDate(start.getDate()-7);
-    const secs = recentRides
-      .filter(r => { const d = new Date(r.ride_date+'T00:00:00'); return d >= start && d < end; })
-      .reduce((s,r) => s + (r.moving_time_s||0), 0);
+    const weekRides = recentRides.filter(r => { const d = new Date(r.ride_date+'T00:00:00'); return d >= start && d < end; });
+    const secs = weekRides.reduce((s,r) => s + (r.moving_time_s||0), 0);
     let target = 0;
     for(let d = new Date(start); d < end; d.setDate(d.getDate()+1)){
       target += dailyCapacityHours(new Date(d));
     }
-    buckets.push({ label: i===0 ? 'This wk' : `-${i}w`, hours: secs/3600, target });
+    // Adherence = how closely that week's rides matched what was actually prescribed
+    // (right effort type, duration, power for the day), not just whether hours were logged.
+    const scores = weekRides.map(computeRideScore).filter(s => s!=null);
+    const avgScore = scores.length ? scores.reduce((a,b)=>a+b,0)/scores.length : null;
+    buckets.push({ label: i===0 ? 'This wk' : `-${i}w`, hours: secs/3600, target, avgScore });
   }
   return buckets;
 }
@@ -522,8 +525,9 @@ function barChartSVG(series, height=100){
   const bars = series.map((s,i)=>{
     const h = Math.max(2, (s.hours/max)*(height-34));
     const x = i*barW;
-    const ratio = s.target>0 ? s.hours/s.target : 1;
-    const color = ratio>=0.9 ? 'var(--cyan)' : ratio>=0.5 ? 'var(--amber)' : 'var(--red)';
+    // Bar colour reflects adherence to what was prescribed that week (avg per-ride score),
+    // not volume — a week can be full of hours but still red if the sessions were the wrong type.
+    const color = s.avgScore==null ? 'var(--muted)' : s.avgScore>=8 ? 'var(--cyan)' : s.avgScore>=6 ? 'var(--amber)' : 'var(--red)';
     const labelY = Math.max(11, height-h-22);
     return `<rect x="${x+barW*0.18}%" y="${height-h-16}" width="${barW*0.64}%" height="${h}" rx="3" fill="${color}" opacity="0.9"/>
       <text x="${x+barW*0.5}%" y="${labelY}" font-size="9" fill="var(--text)" text-anchor="middle" font-family="JetBrains Mono, monospace">${s.hours.toFixed(1)}</text>
