@@ -762,9 +762,9 @@ async function syncRidesNow(){
   btn.textContent = 'Syncing…';
   statusEl.textContent = '';
   try{
-    const r = await fetch('https://ride-sync-one.vercel.app/api/sync');
-    if(!r.ok) throw new Error('Sync request failed (' + r.status + ')');
+    const r = await fetch('/api/trigger-sync');
     const result = await r.json();
+    if(!result.ok) throw new Error(result.error || 'Sync request failed');
     statusEl.textContent = `Synced ${result.synced ?? '?'} ride(s) just now.`;
     await loadRides();
     await loadRideRatings();
