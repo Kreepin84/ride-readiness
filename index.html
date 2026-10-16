@@ -216,6 +216,8 @@ const DEFAULTS = {
   vo2max: 57,
   weight: 83,
   rosterAnchor: '2026-07-05',
+  hezAnchor: '2026-11-01',
+  ccccAnchor: '2026-11-15',
   hrExcellent: 48,
   hrPoor: 68,
   weeklyLoadTarget: 300,
@@ -266,26 +268,52 @@ const OFF_SESSIONS = {
 const TOTAL_ROTATIONS = 6;
 const ROTATION_DAYS = 16;
 
-const CCCC_DATES = ['2026-07-11','2026-07-25','2026-08-08','2026-08-22','2026-09-12','2026-09-26'];
+// Both clubs race on SUNDAYS, fortnightly. Each schedule is an anchor date (a known race
+// Sunday) plus a 14-day interval, so the calendar keeps generating forward without needing a
+// hand-maintained list. Anchors are editable in Settings — if a club's races land on the
+// opposite Sunday to what the dashboard shows, shift that anchor by 7 days.
+const RACE_DOW = 0;                 // 0 = Sunday
+const RACE_INTERVAL_DAYS = 14;      // fortnightly
 const HEZ_URL = 'https://buncheur.com/races?author=Newcastle+Hunter+CC&option_22=Race%2CBunch+Ride&option_23=Road%2CTrack';
 const CCCC_URL = 'https://entryboss.cc/calendar/centralcoast';
+
+// DST-safe whole-day difference. Subtracting two local Date objects across a daylight-saving
+// boundary yields 23- or 25-hour days, and Math.floor() on that silently loses a day — which
+// shifted every roster block by one and mislabelled the first day of each block.
+function dayDiff(a, b){
+  const ua = Date.UTC(a.getFullYear(), a.getMonth(), a.getDate());
+  const ub = Date.UTC(b.getFullYear(), b.getMonth(), b.getDate());
+  return Math.round((ua - ub) / 86400000);
+}
+
+// Is this date a race day for the given club anchor? True when it falls on the club's race
+// weekday and sits a whole number of fortnights from the anchor.
+function isClubRaceDay(dateObj, anchorStr){
+  if(!anchorStr) return false;
+  if(dateObj.getDay() !== RACE_DOW) return false;
+  const anchor = new Date(anchorStr+'T00:00:00');
+  const diff = dayDiff(dateObj, anchor);
+  return ((diff % RACE_INTERVAL_DAYS) + RACE_INTERVAL_DAYS) % RACE_INTERVAL_DAYS === 0;
+}
+function isHezDay(dateObj){ return isClubRaceDay(dateObj, data.hezAnchor); }
+function isCcccDay(dateObj){ return isClubRaceDay(dateObj, data.ccccAnchor); }
 
 function phaseForRotation(rotation){ if(rotation<=2) return 'base'; if(rotation<=4) return 'build'; return 'peak'; }
 function programRotation(dateObj){
   const anchor = new Date(data.rosterAnchor+'T00:00:00');
-  const days = Math.floor((dateObj-anchor)/86400000);
+  const days = dayDiff(dateObj, anchor);
   const rot = Math.floor(Math.max(days,0)/ROTATION_DAYS)+1;
   return Math.min(Math.max(rot,1), TOTAL_ROTATIONS);
 }
 
-// Saturdays that fall in an Off Block are treated as race days — HEZ runs weekly and CCCC is
-// fortnightly on fixed dates, so the *actual* planned session on those Saturdays is racing, not
+// Race Sundays that fall in an Off Block are treated as race days — both HEZ and CCCC run
+// fortnightly on Sundays, so the *actual* planned session on those Sundays is racing, not
 // whatever the generic rotation slot would otherwise prescribe. Without this override, a full-gas
 // race gets auto-scored against a mismatched "recovery spin" band and comes out looking terrible
 // even when the ride itself was excellent.
 function sessionForDate(dateObj){
   const anchor = new Date(data.rosterAnchor+'T00:00:00');
-  const diffDays = Math.floor((dateObj-anchor)/86400000);
+  const diffDays = dayDiff(dateObj, anchor);
   const cyclePos = ((diffDays % 16)+16) % 16;
   const rotation = programRotation(dateObj);
   const phase = phaseForRotation(rotation);
@@ -309,17 +337,19 @@ function sessionForDate(dateObj){
   if(isPostNightshiftOffBlock && idx<2) isHard = false;
 
   if(block==='Off Block'){
-    const raceSat = findRaceSaturdayInBlock(dateObj);
-    if(raceSat){
-      const key = dateObj.toISOString().slice(0,10);
-      const raceKey = raceSat.toISOString().slice(0,10);
-      const dayAfter = new Date(raceSat); dayAfter.setDate(dayAfter.getDate()+1);
-      const dayAfterKey = dayAfter.toISOString().slice(0,10);
+    const raceSun = findRaceSundayInBlock(dateObj);
+    if(raceSun){
+      const key = localKey(dateObj);
+      const raceKey = localKey(raceSun);
+      const dayAfter = new Date(raceSun); dayAfter.setDate(dayAfter.getDate()+1);
+      const dayAfterKey = localKey(dayAfter);
       if(key===raceKey){
-        const isCCCC = CCCC_DATES.includes(raceKey);
-        text = isCCCC
+        const hez = isHezDay(raceSun), cccc = isCcccDay(raceSun);
+        text = (hez && cccc)
           ? 'Race day — HEZ + CCCC racing, 60–100 min, full gas.'
-          : 'Race day — HEZ racing, 45–90 min, full gas.';
+          : cccc
+            ? 'Race day — CCCC racing, 45–90 min, full gas.'
+            : 'Race day — HEZ racing, 45–90 min, full gas.';
         isHard = true;
       } else if(key===dayAfterKey){
         text = 'Z1 recovery spin, 30–60 min, very easy legs only after racing.';
@@ -341,16 +371,24 @@ function sessionForDate(dateObj){
 // Given any date, finds the Saturday (if any) that falls within that date's current
 // Off Block — since the 16-day roster cycle drifts against the 7-day week, not every
 // Off Block contains a Saturday. Returns null if this block has no raceable weekend.
-function findRaceSaturdayInBlock(dateObj){
+// Local-date key (YYYY-MM-DD). toISOString() converts to UTC first, which rolls the date back
+// a day for any Australian local midnight — so it must not be used for calendar-day keys.
+function localKey(d){
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+// Returns the Sunday inside this Off Block that actually has a race on it (HEZ or CCCC), or
+// null. A Sunday with neither club racing is not a race day.
+function findRaceSundayInBlock(dateObj){
   const anchor = new Date(data.rosterAnchor+'T00:00:00');
-  const diffDays = Math.floor((dateObj-anchor)/86400000);
+  const diffDays = dayDiff(dateObj, anchor);
   const cyclePos = ((diffDays % 16)+16) % 16;
   if(!((cyclePos>=4 && cyclePos<8) || (cyclePos>=12 && cyclePos<16))) return null;
   const blockStartOffset = cyclePos>=12 ? 12 : 4;
   const blockStart = new Date(dateObj); blockStart.setDate(blockStart.getDate() - (cyclePos - blockStartOffset));
   for(let i=0;i<4;i++){
     const d = new Date(blockStart); d.setDate(d.getDate()+i);
-    if(d.getDay()===6) return d;
+    if(d.getDay()===RACE_DOW && (isHezDay(d) || isCcccDay(d))) return d;
   }
   return null;
 }
@@ -664,24 +702,25 @@ function renderSessionCard(dateObj, label){
 function renderRaceCalendar(){
   const today = new Date(); today.setHours(0,0,0,0);
   let html = '', shown = 0;
-  for(let i=0; i<60 && shown<6; i++){
+  for(let i=0; i<120 && shown<6; i++){
     const d = new Date(today); d.setDate(today.getDate()+i);
-    if(d.getDay() !== 6) continue;
+    if(d.getDay() !== RACE_DOW) continue;
+    const hez = isHezDay(d), cccc = isCcccDay(d);
+    if(!hez && !cccc) continue;            // no club racing that Sunday — don't list it
     const s = sessionForDate(d);
     const isOff = s.block === 'Off Block';
-    const dateKey = d.toISOString().slice(0,10);
-    const isCCCC = CCCC_DATES.includes(dateKey);
     const dayStr = d.toLocaleDateString([], {weekday:'short', month:'short', day:'numeric'});
-    let label, color, url;
-    if(isOff && isCCCC){ label='CCCC + HEZ available'; color='var(--cyan)'; url=CCCC_URL; }
-    else if(isOff){ label='HEZ available'; color='var(--cyan)'; url=HEZ_URL; }
-    else if(isCCCC){ label='CCCC on — but working'; color='var(--red)'; url=CCCC_URL; }
-    else { label='Working — no racing'; color='var(--muted)'; url=null; }
-    const clickAttr = url ? `onclick="window.open('${url}','_blank')" style="cursor:pointer;${isOff?'border-color:var(--amber);':''}"` : `style="${isOff?'border-color:var(--amber);':''}"`;
-    html += `<div class="log-row" ${clickAttr}><span>${dayStr}</span><span class="n" style="color:${color}">${label}${url?' →':''}</span></div>`;
+    const who = (hez && cccc) ? 'HEZ + CCCC' : cccc ? 'CCCC' : 'HEZ';
+    const url = cccc ? CCCC_URL : HEZ_URL;
+    let label, color, href;
+    if(isOff){ label=`${who} available`; color='var(--cyan)'; href=url; }
+    else { label=`${who} on — but working`; color='var(--red)'; href=url; }
+    const clickAttr = `onclick="window.open('${href}','_blank')" style="cursor:pointer;${isOff?'border-color:var(--amber);':''}"`;
+    html += `<div class="log-row" ${clickAttr}><span>${dayStr}</span><span class="n" style="color:${color}">${label} →</span></div>`;
     shown++;
   }
-  html += `<div class="card-note" style="padding:6px 2px 0;">Tap a row to open the entry page. HEZ races weekly; CCCC is fortnightly.</div>`;
+  if(!shown) html += `<div class="card-note" style="padding:6px 2px 0;">No race Sundays found — check the HEZ and CCCC anchor dates in Settings.</div>`;
+  html += `<div class="card-note" style="padding:6px 2px 0;">Tap a row to open the entry page. HEZ and CCCC both race fortnightly on Sundays.</div>`;
   document.getElementById('raceLog').innerHTML = html;
 }
 
@@ -869,6 +908,8 @@ const FIELD_SETS = {
     {key:'vo2max', label:'VO2max estimate', val:()=>data.vo2max, type:'number'},
     {key:'weight', label:'Weight (kg)', val:()=>data.weight, type:'number'},
     {key:'rosterAnchor', label:'First day of a nightshift block (YYYY-MM-DD)', val:()=>data.rosterAnchor, type:'text'},
+    {key:'hezAnchor', label:'A known HEZ race Sunday (YYYY-MM-DD) — fortnightly from here', val:()=>data.hezAnchor, type:'text'},
+    {key:'ccccAnchor', label:'A known CCCC race Sunday (YYYY-MM-DD) — fortnightly from here', val:()=>data.ccccAnchor, type:'text'},
     {key:'hrExcellent', label:'Overnight HR that scores 100 (fully recovered)', val:()=>data.hrExcellent, type:'number'},
     {key:'hrPoor', label:'Overnight HR that scores 0 (poor recovery)', val:()=>data.hrPoor, type:'number'},
     {key:'weeklyLoadTarget', label:'7-day Relative Effort sum = "full tunnel" (100%)', val:()=>data.weeklyLoadTarget, type:'number'},
