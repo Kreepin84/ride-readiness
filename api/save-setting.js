@@ -3,9 +3,20 @@
 
 const ALLOWED_KEYS = [
   'torqueEff', 'ftp', 'vo2max', 'weight', 'rosterAnchor', 'programStart',
+  'hezAnchor', 'ccccAnchor',
   'hrExcellent', 'hrPoor', 'weeklyLoadTarget', 'weeklyHoursTarget', 'ftpTestDate', 'ftpTestIntervalWeeks',
   'lastUpdated'
 ];
+
+// Keys holding dates/strings rather than numbers — these skip the numeric bounds check below.
+// Listing them here (rather than inline in the check) keeps the two lists from drifting apart,
+// which is what silently rejected the race-anchor saves when they were first added.
+const NON_NUMERIC_KEYS = new Set([
+  'rosterAnchor', 'programStart', 'hezAnchor', 'ccccAnchor', 'ftpTestDate', 'lastUpdated'
+]);
+const DATE_KEYS = new Set([
+  'rosterAnchor', 'programStart', 'hezAnchor', 'ccccAnchor', 'ftpTestDate'
+]);
 
 // Basic in-memory rate limit: max 20 requests per IP per 60s.
 // Resets on cold start, but catches rapid bursts within a warm instance \u2014
@@ -41,10 +52,17 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Missing value' });
   }
   // Basic sanity bounds so a bad request can't write garbage into numeric fields
-  if (key !== 'rosterAnchor' && key !== 'programStart' && key !== 'ftpTestDate' && key !== 'lastUpdated') {
+  if (!NON_NUMERIC_KEYS.has(key)) {
     const num = Number(value);
     if (Number.isNaN(num) || Math.abs(num) > 1000000) {
       return res.status(400).json({ error: 'Value out of range' });
+    }
+  }
+  // Date-shaped settings must actually be a valid YYYY-MM-DD, or the calendar silently
+  // produces no race days at all rather than reporting a bad input.
+  if (DATE_KEYS.has(key)) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value)) || Number.isNaN(Date.parse(`${value}T00:00:00`))) {
+      return res.status(400).json({ error: 'Expected a date in YYYY-MM-DD format' });
     }
   }
 
