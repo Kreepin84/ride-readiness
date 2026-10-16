@@ -43,26 +43,39 @@ export default async function handler(req, res) {
     return res.status(429).json({ error: 'Too many requests, slow down and try again in a minute.' });
   }
 
-  const { key, value } = req.body || {};
+  // Accepts either a single {key, value} or a batch {settings: [{key, value}, ...]}.
+  // The settings form has grown past a dozen fields and used to fire one request per field,
+  // which blew through the rate limit on a single Save and failed partway with some fields
+  // written and some not. A batch is one request and one atomic upsert.
+  const body = req.body || {};
+  const items = Array.isArray(body.settings)
+    ? body.settings
+    : [{ key: body.key, value: body.value }];
 
-  if (!key || !ALLOWED_KEYS.includes(key)) {
-    return res.status(400).json({ error: 'Invalid or missing key' });
+  if (!items.length || items.length > ALLOWED_KEYS.length) {
+    return res.status(400).json({ error: 'Invalid settings payload' });
   }
-  if (value === undefined || value === null) {
-    return res.status(400).json({ error: 'Missing value' });
-  }
-  // Basic sanity bounds so a bad request can't write garbage into numeric fields
-  if (!NON_NUMERIC_KEYS.has(key)) {
-    const num = Number(value);
-    if (Number.isNaN(num) || Math.abs(num) > 1000000) {
-      return res.status(400).json({ error: 'Value out of range' });
+
+  for (const { key, value } of items) {
+    if (!key || !ALLOWED_KEYS.includes(key)) {
+      return res.status(400).json({ error: `Invalid or missing key: ${key}` });
     }
-  }
-  // Date-shaped settings must actually be a valid YYYY-MM-DD, or the calendar silently
-  // produces no race days at all rather than reporting a bad input.
-  if (DATE_KEYS.has(key)) {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value)) || Number.isNaN(Date.parse(`${value}T00:00:00`))) {
-      return res.status(400).json({ error: 'Expected a date in YYYY-MM-DD format' });
+    if (value === undefined || value === null) {
+      return res.status(400).json({ error: `Missing value for ${key}` });
+    }
+    // Basic sanity bounds so a bad request can't write garbage into numeric fields
+    if (!NON_NUMERIC_KEYS.has(key)) {
+      const num = Number(value);
+      if (Number.isNaN(num) || Math.abs(num) > 1000000) {
+        return res.status(400).json({ error: `Value out of range for ${key}` });
+      }
+    }
+    // Date-shaped settings must actually be a valid YYYY-MM-DD, or the calendar silently
+    // produces no race days at all rather than reporting a bad input.
+    if (DATE_KEYS.has(key)) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value)) || Number.isNaN(Date.parse(`${value}T00:00:00`))) {
+        return res.status(400).json({ error: `Expected a date in YYYY-MM-DD format for ${key}` });
+      }
     }
   }
 
@@ -82,7 +95,9 @@ export default async function handler(req, res) {
         'Content-Type': 'application/json',
         Prefer: 'resolution=merge-duplicates'
       },
-      body: JSON.stringify({ key, value: String(value), updated_at: new Date().toISOString() })
+      body: JSON.stringify(items.map(({ key, value }) => ({
+        key, value: String(value), updated_at: new Date().toISOString()
+      })))
     });
     if (!r.ok) {
       const t = await r.text();

@@ -419,20 +419,27 @@ async function loadSettings(){
 }
 
 async function saveSetting(key, value){
+  return saveSettings([{ key, value }]);
+}
+
+// Saves the whole form in ONE request. Saving field-by-field meant a dozen-plus POSTs per
+// Save, which tripped the endpoint's rate limit and left the settings half-written — the
+// failure then surfaced against whichever field happened to be next in the loop.
+async function saveSettings(settings){
   try{
     const r = await fetch('/api/save-setting', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ key, value })
+      body: JSON.stringify({ settings })
     });
     if(!r.ok){
       const body = await r.text().catch(()=>'');
-      console.error('Save setting failed', body);
-      return { ok:false, status:r.status };
+      console.error('Save settings failed', body);
+      return { ok:false, status:r.status, body };
     }
     return { ok:true };
   }catch(e){
-    console.error('Save setting request failed', e);
+    console.error('Save settings request failed', e);
     return { ok:false, status:0 };
   }
 }
@@ -984,19 +991,21 @@ async function saveModal(){
     }
 
     const fields = FIELD_SETS[currentField];
-    for(const f of fields){
+    const stamp = new Date().toISOString();
+    const payload = fields.map(f => {
       const raw = document.getElementById(`input-${f.key}`).value;
-      const val = f.type==='number' ? parseFloat(raw) : raw;
-      const result = await saveSetting(f.key, val);
-      if(!result.ok){
-        errEl.textContent = `Couldn\u2019t save "${f.label}" — nothing was updated. Try again in a moment.`;
-        errEl.classList.add('show');
-        return;
-      }
-      data[f.key] = val;
+      return { key: f.key, value: f.type==='number' ? parseFloat(raw) : raw };
+    });
+    const result = await saveSettings(payload.concat([{key:'lastUpdated', value: stamp}]));
+    if(!result.ok){
+      errEl.textContent = result.status === 429
+        ? 'Too many saves in a row — wait a minute, then try again.'
+        : `Couldn\u2019t save — nothing was updated. Try again in a moment.`;
+      errEl.classList.add('show');
+      return;
     }
-    data.lastUpdated = new Date().toISOString();
-    await saveSetting('lastUpdated', data.lastUpdated);
+    payload.forEach(({key, value}) => { data[key] = value; });
+    data.lastUpdated = stamp;
     closeModal();
     render();
   } finally {
