@@ -149,7 +149,7 @@
 </div>
 
 <div class="lane"></div>
-<div class="section-title" style="margin-top:16px;">Latest Sleep &amp; HR (auto, via Tasker)</div>
+<div class="section-title" style="margin-top:16px;">Latest Sleep &amp; HRV (auto, via Oura)</div>
 <div class="log" id="sleepLog"></div>
 
 <div class="lane"></div>
@@ -231,6 +231,8 @@ let data = {...DEFAULTS};
 let currentField = null;
 let currentRideId = null;
 let latestSleep = null;
+let sleepHistory = [];      // last 60 days, newest first — drives the HRV baseline
+let staleSleepRow = null;   // most recent row when it is too old to score against
 let recentRides = [];
 let rideRatings = {};
 
@@ -444,12 +446,46 @@ async function saveSettings(settings){
   }
 }
 
+// Loads last night's row plus enough history to compute an HRV baseline.
+// Also flags whether the latest row is actually recent: the old code took the
+// most recent row unconditionally, so when the sleep feed stopped the dashboard
+// kept scoring readiness against a reading from days earlier without saying so.
 async function loadLatestSleep(){
   try{
-    const { data: rows, error } = await sb.from('daily_log').select('*').order('log_date',{ascending:false}).limit(1);
+    const since = new Date(); since.setDate(since.getDate()-60);
+    const { data: rows, error } = await sb.from('daily_log').select('*')
+      .gte('log_date', localKey(since))
+      .order('log_date',{ascending:false}).limit(60);
     if(error) throw error;
-    if(rows && rows.length) latestSleep = rows[0];
-  }catch(e){ console.error('Sleep load failed', e); }
+    sleepHistory = rows || [];
+    const newest = sleepHistory[0] || null;
+    latestSleep = isSleepRowFresh(newest) ? newest : null;
+    staleSleepRow = (newest && !latestSleep) ? newest : null;
+  }catch(e){ console.error('Sleep load failed', e); sleepHistory = []; latestSleep = null; staleSleepRow = null; }
+}
+
+// A row counts as current if it is for today or yesterday. Anything older means
+// the ring was off, not charged, or the sync is broken.
+function isSleepRowFresh(row){
+  if(!row || !row.log_date) return false;
+  const rowDate = new Date(row.log_date+'T00:00:00');
+  const today = new Date(); today.setHours(0,0,0,0);
+  return dayDiff(today, rowDate) <= 1;
+}
+
+// Rolling HRV baseline. HRV is only meaningful relative to your own recent
+// normal — an absolute number says nothing — so readiness compares last night
+// against the median of the previous 14 nights with data.
+function hrvBaseline(){
+  const vals = sleepHistory
+    .filter(r => r.hrv_ms != null)
+    .slice(1, 15)
+    .map(r => Number(r.hrv_ms))
+    .filter(v => Number.isFinite(v) && v > 0)
+    .sort((a,b) => a-b);
+  if(vals.length < 5) return null;          // not enough history to judge against
+  const mid = Math.floor(vals.length/2);
+  return vals.length % 2 ? vals[mid] : (vals[mid-1]+vals[mid])/2;
 }
 
 async function loadRides(){
@@ -502,29 +538,85 @@ function weeklyRelativeEffort(){
     .reduce((sum,r) => sum + (r.relative_effort || 0), 0);
 }
 
+// Weights. Sleep used to carry 40% on its own, which put a lot of faith in one
+// crude number. HRV is the better early-warning signal — it moves a day or two
+// before resting HR does — so it takes a share, and resting HR is now Oura's
+// true overnight low rather than an average.
+//
+// Any component without data drops out and its weight is redistributed across
+// the rest, so a missing ring degrades the score's precision instead of
+// silently scoring 60 and dragging the whole dial toward the middle.
+const READINESS_WEIGHTS = { sleep: 0.30, hrv: 0.20, hr: 0.20, load: 0.30 };
+
 function computeReadiness(){
   const sleepHrs = latestSleep && latestSleep.sleep_duration_ms ? latestSleep.sleep_duration_ms/3600000 : null;
-  const overnightHr = latestSleep && latestSleep.avg_heart_rate!=null ? Number(latestSleep.avg_heart_rate) : null;
+  // Prefer Oura's lowest overnight HR; fall back to the average for old Tasker rows.
+  const overnightHr = latestSleep && latestSleep.resting_hr != null ? Number(latestSleep.resting_hr)
+                    : latestSleep && latestSleep.avg_heart_rate != null ? Number(latestSleep.avg_heart_rate)
+                    : null;
+  const hrv = latestSleep && latestSleep.hrv_ms != null ? Number(latestSleep.hrv_ms) : null;
+  const baseline = hrvBaseline();
   const weeklyEffort = weeklyRelativeEffort();
 
-  const sleepScore = sleepHrs!=null ? clamp(sleepHrs/8*100, 0, 100) : 60;
+  const sleepScore = sleepHrs!=null ? clamp(sleepHrs/8*100, 0, 100) : null;
+
   const hrRange = Math.max(1, data.hrPoor - data.hrExcellent);
-  const hrScore = overnightHr!=null ? clamp(100 - (overnightHr - data.hrExcellent)/hrRange*100, 0, 100) : 60;
+  const hrScore = overnightHr!=null ? clamp(100 - (overnightHr - data.hrExcellent)/hrRange*100, 0, 100) : null;
+
+  // HRV scored as a percentage of baseline: at or above baseline scores 100,
+  // 25% below scores 0. That band covers the range where a drop is meaningful
+  // without treating normal night-to-night noise as a red flag.
+  let hrvScore = null, hrvPctOfBaseline = null;
+  if(hrv!=null && baseline){
+    hrvPctOfBaseline = hrv / baseline * 100;
+    hrvScore = clamp((hrvPctOfBaseline - 75) / 25 * 100, 0, 100);
+  }
+
   const loadPct = clamp(weeklyEffort / Math.max(1,data.weeklyLoadTarget) * 100, 0, 100);
   const loadScore = 100 - loadPct;
 
-  let readiness = sleepScore*0.40 + hrScore*0.25 + loadScore*0.35;
-  let capped = false;
-  if(sleepHrs!=null && sleepHrs < 5){ readiness = Math.min(readiness, 50); capped = true; }
+  const parts = [
+    { score: sleepScore, w: READINESS_WEIGHTS.sleep },
+    { score: hrvScore,   w: READINESS_WEIGHTS.hrv },
+    { score: hrScore,    w: READINESS_WEIGHTS.hr },
+    { score: loadScore,  w: READINESS_WEIGHTS.load }
+  ].filter(p => p.score != null);
+
+  const totalWeight = parts.reduce((s,p) => s + p.w, 0);
+  let readiness = totalWeight > 0
+    ? parts.reduce((s,p) => s + p.score * p.w, 0) / totalWeight
+    : 60;
+
+  // With no recent sleep data the only live input is training load, and an easy
+  // week alone would read as a perfect 100. Cap it: an unknown recovery state is
+  // not the same as a good one.
+  const hasRecoveryData = sleepScore != null || hrScore != null || hrvScore != null;
+  if(!hasRecoveryData) readiness = Math.min(readiness, 70);
+
+  // Hard caps. These override the weighted score because they describe states
+  // where the arithmetic would otherwise flatter a body that needs a day off.
+  let capped = false, capReason = null;
+  if(sleepHrs!=null && sleepHrs < 5){
+    readiness = Math.min(readiness, 50); capped = true; capReason = 'under 5h sleep';
+  }
+  if(hrvPctOfBaseline!=null && hrvPctOfBaseline < 75){
+    readiness = Math.min(readiness, 45); capped = true;
+    capReason = capReason ? capReason + ', HRV well below baseline' : 'HRV well below baseline';
+  }
 
   return {
     readiness: Math.round(clamp(readiness,0,100)),
-    sleepScore: Math.round(sleepScore),
-    hrScore: Math.round(hrScore),
+    sleepScore: sleepScore!=null ? Math.round(sleepScore) : null,
+    hrvScore: hrvScore!=null ? Math.round(hrvScore) : null,
+    hrScore: hrScore!=null ? Math.round(hrScore) : null,
     loadScore: Math.round(loadScore),
     loadPct: Math.round(loadPct),
     weeklyEffort,
-    sleepHrs, overnightHr, capped
+    sleepHrs, overnightHr, hrv, hrvBaseline: baseline,
+    hrvPctOfBaseline: hrvPctOfBaseline!=null ? Math.round(hrvPctOfBaseline) : null,
+    tempDeviation: latestSleep && latestSleep.temp_deviation_c != null ? Number(latestSleep.temp_deviation_c) : null,
+    hasData: parts.length > 0 && latestSleep != null,
+    capped, capReason
   };
 }
 
@@ -680,15 +772,54 @@ function arcSVG(pct, color, size=56){
 }
 
 function renderSleep(){
+  const el = document.getElementById('sleepLog');
   if(!latestSleep){
-    document.getElementById('sleepLog').innerHTML = `<div class="card-note" style="padding:14px;">No data yet — waiting on Tasker's first push to Supabase.</div>`;
+    // Distinguish "never had data" from "the feed has stopped" — the second is a
+    // fault worth seeing, and used to be invisible because the stale row was
+    // rendered as though it were last night.
+    el.innerHTML = staleSleepRow
+      ? `<div class="card-note" style="padding:14px;color:var(--amber);">
+           No recent data — last reading was ${staleSleepRow.log_date}. Check the ring is charged and synced.
+         </div>`
+      : `<div class="card-note" style="padding:14px;">No data yet — waiting on the first Oura sync.</div>`;
     return;
   }
   const hrs = latestSleep.sleep_duration_ms ? (latestSleep.sleep_duration_ms/3600000).toFixed(1) : '—';
-  document.getElementById('sleepLog').innerHTML = `
+  const ri = computeReadiness();
+  const baseline = ri.hrvBaseline;
+
+  let hrvRow = '';
+  if(latestSleep.hrv_ms != null){
+    const pct = ri.hrvPctOfBaseline;
+    const colour = pct == null ? 'var(--fg)' : pct >= 95 ? 'var(--cyan)' : pct >= 80 ? 'var(--amber)' : 'var(--red)';
+    const vs = baseline ? ` <span class="sub-n">(${pct}% of ${Math.round(baseline)} baseline)</span>` : ' <span class="sub-n">(building baseline)</span>';
+    hrvRow = `<div class="log-row"><span>HRV</span><span class="n" style="color:${colour}">${Math.round(latestSleep.hrv_ms)} ms${vs}</span></div>`;
+  }
+
+  // Oura's temperature deviation is the earliest signal of something brewing —
+  // it typically moves before resting HR or how you feel does.
+  let tempRow = '';
+  if(latestSleep.temp_deviation_c != null){
+    const t = Number(latestSleep.temp_deviation_c);
+    const colour = Math.abs(t) >= 0.8 ? 'var(--red)' : Math.abs(t) >= 0.4 ? 'var(--amber)' : 'var(--fg)';
+    tempRow = `<div class="log-row"><span>Body temp deviation</span><span class="n" style="color:${colour}">${t > 0 ? '+' : ''}${t.toFixed(1)} °C</span></div>`;
+  }
+
+  const restingRow = latestSleep.resting_hr != null
+    ? `<div class="log-row"><span>Resting HR (lowest)</span><span class="n">${Math.round(latestSleep.resting_hr)} bpm</span></div>`
+    : `<div class="log-row"><span>Overnight avg HR</span><span class="n">${latestSleep.avg_heart_rate ?? '—'} bpm</span></div>`;
+
+  const scoreRow = latestSleep.sleep_score != null || latestSleep.readiness_score != null
+    ? `<div class="log-row"><span>Oura scores</span><span class="n">sleep ${latestSleep.sleep_score ?? '—'} · readiness ${latestSleep.readiness_score ?? '—'}</span></div>`
+    : '';
+
+  el.innerHTML = `
     <div class="log-row"><span>Date</span><span class="n">${latestSleep.log_date}</span></div>
     <div class="log-row"><span>Sleep duration</span><span class="n">${hrs} hrs</span></div>
-    <div class="log-row"><span>Overnight avg HR</span><span class="n">${latestSleep.avg_heart_rate ?? '—'} bpm</span></div>
+    ${restingRow}
+    ${hrvRow}
+    ${tempRow}
+    ${scoreRow}
   `;
 }
 
@@ -856,9 +987,19 @@ function render(){
   flag.textContent = band.label;
   flag.style.color = band.color;
   flag.style.borderColor = band.color;
-  document.getElementById('readinessPrescription').textContent = band.text + (ri.capped ? ' (capped — under 5h sleep)' : '');
+  document.getElementById('readinessPrescription').textContent =
+    band.text + (ri.capped ? ` (capped — ${ri.capReason})` : '');
+
+  // Only show the components that actually contributed. Listing a weight for a
+  // missing input implies data that isn't there.
+  const shown = [];
+  if(ri.sleepScore != null) shown.push(`sleep ${ri.sleepScore} × ${Math.round(READINESS_WEIGHTS.sleep*100)}%`);
+  if(ri.hrvScore   != null) shown.push(`HRV ${ri.hrvScore} × ${Math.round(READINESS_WEIGHTS.hrv*100)}%`);
+  if(ri.hrScore    != null) shown.push(`HR ${ri.hrScore} × ${Math.round(READINESS_WEIGHTS.hr*100)}%`);
+  shown.push(`load ${ri.loadScore} × ${Math.round(READINESS_WEIGHTS.load*100)}%`);
   document.getElementById('readinessBreakdown').innerHTML =
-    `sleep ${ri.sleepScore} × 40% &nbsp;+&nbsp; HR ${ri.hrScore} × 25% &nbsp;+&nbsp; load ${ri.loadScore} × 35%`;
+    (ri.hasData ? '' : '<span style="color:var(--amber)">no recent sleep data — </span>') +
+    shown.join(' &nbsp;+&nbsp; ');
 
   document.getElementById('lastUpdated').textContent = data.lastUpdated
     ? 'Last updated: ' + new Date(data.lastUpdated).toLocaleString([], {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})
