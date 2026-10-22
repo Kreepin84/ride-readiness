@@ -57,17 +57,31 @@ Deliberately minimal — no build step, no framework, no package.json.
   - `rate-ride.js` — ride ratings.
   - `trigger-sync.js` — proxies the Strava sync, which lives in a separate Vercel project.
   - `sync-oura.js` — pulls sleep, HRV and readiness from the Oura v2 API. `?days=N` backfills.
+  - `oura-auth.js` — one-time OAuth handshake; seeds `oura_tokens`.
 - Hosted on Vercel, deploys from `main`. `vercel.json` schedules the Oura sync daily; Strava
   is pulled by the separate sync project.
 
 ### Env vars (Vercel)
 
-`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `OURA_ACCESS_TOKEN`, optional `SYNC_SECRET`.
+`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `OURA_CLIENT_ID`, `OURA_CLIENT_SECRET`,
+optional `OURA_REDIRECT_URI` and `SYNC_SECRET`.
+
+### Oura API gotchas
+
+- **Personal access tokens were deprecated in December 2025.** OAuth is the only route.
+  Refresh tokens are **single-use and rotate on every refresh**, so the new pair must be
+  written back to `oura_tokens` immediately or the integration locks itself out.
+- **`end_date` on the detailed `/sleep` endpoint is exclusive**, unlike `daily_sleep` and
+  `daily_readiness`. Querying up to today returns nothing for last night — which is the
+  record carrying HRV and resting HR. The sync pads the end date by a day and filters after.
+- **Several sleep periods are returned per night** (`long_sleep`, `sleep`, `late_nap`,
+  `rest`). Only the main one has meaningful HRV. Prefer `long_sleep`, then longest duration.
+- Responses paginate via `next_token`; a long backfill needs to follow it.
 
 ### Supabase tables
 
 `dashboard_settings` (key/value), `rides`, `ride_ratings`, `daily_log` (nightly recovery),
-`ride_plans`, `strava_tokens`.
+`ride_plans`, `strava_tokens`, `oura_tokens`.
 
 `daily_log` carries a `source` column: `tasker` for the old Health Connect rows, `oura` for
 anything the sync writes. Oura rows add `hrv_ms`, `resting_hr` (overnight low, preferred over
