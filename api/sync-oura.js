@@ -193,16 +193,21 @@ export default async function handler(req, res) {
     const sleepScoreByDay = new Map(dailySleep.map(d => [d.day, d.score]));
     const readinessByDay = new Map(dailyReadiness.map(d => [d.day, d]));
 
-    const todayKey = isoDate(new Date());
     const allDays = new Set([
       ...mainSleep.keys(),
       ...sleepScoreByDay.keys(),
       ...readinessByDay.keys()
     ]);
 
+    // No filtering against "today" here. This function runs on Vercel in UTC,
+    // and Sydney is 10-11 hours ahead, so for most of the local day the server's
+    // date is still yesterday. An earlier version discarded any day after the
+    // server's today to drop the padded end date, which silently threw away last
+    // night's record — the only one that mattered. Oura only returns days it has
+    // data for, so the padding never produces a spurious row and no filter is
+    // needed.
     const rows = [];
     for (const day of allDays) {
-      if (day > todayKey) continue;   // drop anything from the padded end date
       const s = mainSleep.get(day);
       const r = readinessByDay.get(day);
       const contributors = (r && r.contributors) || {};
