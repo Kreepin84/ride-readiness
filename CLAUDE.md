@@ -14,7 +14,8 @@ prefer them over anything an app estimates.
   are model extrapolations from the 5-minute end of the power curve, not threshold
   measurements. Don't change zones on one.
 - **VT1 175W / ~120bpm**, **FatMax ~125W**, **VO2max ~60** (lab CPET, plus Garmin estimate).
-- **Weight ~81–83kg.** Zwift weight must be correct — a wrong value invalidates a race result.
+- **Weight 82.9kg** (20 Oct 2026). Zwift weight must be correct — a wrong value invalidates
+  a race result.
 - **Z2 target 150–175W** for long rides, not the full zone up to 221W. The top of Z2 sits on
   VT1 and that band is already overloaded; low aerobic is the underfed one.
 - **The gap that matters:** FatMax (125W) sits well below where he trains. Long low-aerobic
@@ -54,13 +55,46 @@ Deliberately minimal — no build step, no framework, no package.json.
   client doesn't need an open write policy.
   - `save-setting.js` — settings upsert. Accepts a batch `{settings:[{key,value},...]}`.
   - `rate-ride.js` — ride ratings.
-  - `trigger-sync.js` — manual Strava sync.
-- Hosted on Vercel, deploys from `main`. A cron job pulls Strava; a Tasker pipeline on the
-  phone pushes sleep/HR via Health Connect.
+  - `trigger-sync.js` — proxies the Strava sync, which lives in a separate Vercel project.
+  - `sync-oura.js` — pulls sleep, HRV and readiness from the Oura v2 API. `?days=N` backfills.
+  - `oura-auth.js` — one-time OAuth handshake; seeds `oura_tokens`.
+- Hosted on Vercel, deploys from `main`. `vercel.json` schedules the Oura sync daily; Strava
+  is pulled by the separate sync project.
+
+### Env vars (Vercel)
+
+`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `OURA_CLIENT_ID`, `OURA_CLIENT_SECRET`,
+optional `OURA_REDIRECT_URI` and `SYNC_SECRET`.
+
+### Oura API gotchas
+
+- **Personal access tokens were deprecated in December 2025.** OAuth is the only route.
+  Refresh tokens are **single-use and rotate on every refresh**, so the new pair must be
+  written back to `oura_tokens` immediately or the integration locks itself out.
+- **`end_date` on the detailed `/sleep` endpoint is exclusive**, unlike `daily_sleep` and
+  `daily_readiness`. Querying up to today returns nothing for last night — which is the
+  record carrying HRV and resting HR. The sync pads the end date by a day and filters after.
+- **Several sleep periods are returned per night** (`long_sleep`, `sleep`, `late_nap`,
+  `rest`). Only the main one has meaningful HRV. Prefer `long_sleep`, then longest duration.
+- Responses paginate via `next_token`; a long backfill needs to follow it.
 
 ### Supabase tables
 
-`dashboard_settings` (key/value), `rides`, `ride_ratings`, `daily_log` (overnight sleep + HR).
+`dashboard_settings` (key/value), `rides`, `ride_ratings`, `daily_log` (nightly recovery),
+`ride_plans`, `strava_tokens`, `oura_tokens`.
+
+`daily_log` carries a `source` column: `tasker` for the old Health Connect rows, `oura` for
+anything the sync writes. Oura rows add `hrv_ms`, `resting_hr` (overnight low, preferred over
+`avg_heart_rate`), `sleep_score`, `readiness_score`, `temp_deviation_c` and sleep stages.
+
+### Readiness score
+
+Weighted from sleep 30%, HRV 20%, resting HR 20%, training load 30%. Components with no data
+drop out and their weight is redistributed, so a missing ring loses precision rather than
+quietly scoring a neutral 60. HRV is scored against a rolling 14-night median baseline, not
+an absolute value — below 75% of baseline caps readiness at 45, and under 5h sleep caps it
+at 50. With no recovery data at all the score is capped at 70, because load alone would
+otherwise read 100.
 
 ## Conventions and gotchas
 
