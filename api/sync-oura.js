@@ -116,15 +116,23 @@ async function ouraGet(path, token, startDate, endDate) {
   return out;
 }
 
+// A period has to be at least this long to count as the night's main sleep.
+// Without a floor, a day whose only record is a short nap gets stored as that
+// night's recovery data — a 12-minute record once produced HRV 8 and a resting
+// HR of 91, which then reads as a catastrophic night rather than as no night.
+const MIN_MAIN_SLEEP_S = 3 * 3600;
+
 // Oura reports several sleep periods per night — naps and short rests included —
 // and only the main one carries meaningful HRV and resting HR. Prefer an
-// explicit long_sleep; otherwise fall back to the longest period, so a nap's
-// HRV never gets stored as the night's value.
+// explicit long_sleep; otherwise take the longest period that clears the floor.
+// If nothing clears it, the day has no usable sleep record and gets none.
 function pickMainSleep(periods) {
   const byDay = new Map();
   for (const p of periods) {
     const day = p.day;
     if (!day) continue;
+    if ((p.total_sleep_duration || 0) < MIN_MAIN_SLEEP_S) continue;
+
     const existing = byDay.get(day);
     if (!existing) { byDay.set(day, p); continue; }
 
@@ -211,6 +219,11 @@ export default async function handler(req, res) {
       const s = mainSleep.get(day);
       const r = readinessByDay.get(day);
       const contributors = (r && r.contributors) || {};
+
+      // A day with no usable sleep period and no scores carries nothing. Writing
+      // it anyway creates a row that looks like a reading but holds only nulls,
+      // and the dashboard then treats it as the latest night.
+      if (!s && !sleepScoreByDay.has(day) && !(r && r.score != null)) continue;
 
       rows.push({
         log_date: day,
