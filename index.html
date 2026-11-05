@@ -480,16 +480,39 @@ function isSleepRowFresh(row){
 // Rolling HRV baseline. HRV is only meaningful relative to your own recent
 // normal — an absolute number says nothing — so readiness compares last night
 // against the median of the previous 14 nights with data.
-function hrvBaseline(){
+// Median HRV across a slice of sleepHistory (newest first). Returns null when the
+// window holds too few readings to be worth comparing against.
+function hrvMedianOver(from, to, minCount){
   const vals = sleepHistory
+    .slice(from, to)
     .filter(r => r.hrv_ms != null)
-    .slice(1, 15)
     .map(r => Number(r.hrv_ms))
     .filter(v => Number.isFinite(v) && v > 0)
     .sort((a,b) => a-b);
-  if(vals.length < 5) return null;          // not enough history to judge against
+  if(vals.length < minCount) return null;
   const mid = Math.floor(vals.length/2);
   return vals.length % 2 ? vals[mid] : (vals[mid-1]+vals[mid])/2;
+}
+
+// Day-to-day reference: the last 14 nights, excluding tonight's own reading.
+function hrvBaseline(){
+  return hrvMedianOver(1, 15, 5);
+}
+
+// A rolling baseline quietly follows a sustained decline downward. Drop far
+// enough over a few weeks and the collapsed value becomes the new baseline, so
+// the daily comparison reads ~100% and the cap below stops firing precisely
+// when it matters most. Comparing the last week against the three weeks behind
+// it catches the drift itself rather than the night-to-night noise.
+function hrvDrift(){
+  const recent = hrvMedianOver(0, 7, 4);
+  // Reference is everything else loaded (sleepHistory is 60 days) rather than a
+  // fixed window: the wider it is, the longer it takes for a decline to be
+  // absorbed into it. This buys time, it does not solve the problem — see below.
+  const reference = hrvMedianOver(7, sleepHistory.length, 8);
+  if(recent == null || reference == null) return null;
+  const nights = sleepHistory.filter(r => r.hrv_ms != null).length;
+  return { recent, reference, pct: recent / reference * 100, nights };
 }
 
 async function loadRides(){
@@ -575,6 +598,7 @@ function computeReadiness(){
     hrvPctOfBaseline = hrv / baseline * 100;
     hrvScore = clamp((hrvPctOfBaseline - 75) / 25 * 100, 0, 100);
   }
+  const drift = hrvDrift();
 
   const loadPct = clamp(weeklyEffort / Math.max(1,data.weeklyLoadTarget) * 100, 0, 100);
   const loadScore = 100 - loadPct;
@@ -607,6 +631,12 @@ function computeReadiness(){
     readiness = Math.min(readiness, 45); capped = true;
     capReason = capReason ? capReason + ', HRV well below baseline' : 'HRV well below baseline';
   }
+  // A weeks-long slide is a different signal from one bad night, and the daily
+  // comparison above goes blind to it as the baseline follows it down.
+  if(drift && drift.pct < 80){
+    readiness = Math.min(readiness, 55); capped = true;
+    capReason = capReason ? capReason + ', HRV declining for weeks' : 'HRV declining for weeks';
+  }
 
   return {
     readiness: Math.round(clamp(readiness,0,100)),
@@ -618,6 +648,7 @@ function computeReadiness(){
     weeklyEffort,
     sleepHrs, overnightHr, hrv, hrvBaseline: baseline,
     hrvPctOfBaseline: hrvPctOfBaseline!=null ? Math.round(hrvPctOfBaseline) : null,
+    hrvDrift: drift,
     tempDeviation: latestSleep && latestSleep.temp_deviation_c != null ? Number(latestSleep.temp_deviation_c) : null,
     hasData: parts.length > 0 && latestSleep != null,
     capped, capReason
@@ -800,6 +831,27 @@ function renderSleep(){
     hrvRow = `<div class="log-row"><span>HRV</span><span class="n" style="color:${colour}">${Math.round(latestSleep.hrv_ms)} ms${vs}</span></div>`;
   }
 
+  // Surfaced separately from the nightly figure: a slow slide is invisible in
+  // the percentage-of-baseline number, because the baseline moves with it.
+  let driftRow = '';
+  if(ri.hrvDrift && ri.hrvDrift.pct < 90){
+    const d = ri.hrvDrift;
+    const dColour = d.pct < 80 ? 'var(--red)' : 'var(--amber)';
+    driftRow = `<div class="log-row"><span>HRV trend</span><span class="n" style="color:${dColour}">${Math.round(d.recent)} vs ${Math.round(d.reference)} ms <span class="sub-n">(last 7 nights vs all prior — ${Math.round(d.pct)}%)</span></span></div>`;
+  }
+
+  // Every HRV figure on this card is relative to his own history. With only a
+  // few weeks of it, "normal" is whatever he has been doing lately — which is
+  // worthless if the decline started before the data did. Say so rather than
+  // letting a confident-looking percentage imply otherwise.
+  let thinRow = '';
+  if(ri.hrvDrift && ri.hrvDrift.nights < 42){
+    thinRow = `<div class="card-note" style="padding:8px 14px;color:var(--amber);">
+      HRV baseline is built from only ${ri.hrvDrift.nights} nights. Everything here is measured against that,
+      so it can confirm a change but cannot tell you whether the current level is healthy.
+    </div>`;
+  }
+
   // Oura's temperature deviation is the earliest signal of something brewing —
   // it typically moves before resting HR or how you feel does.
   let tempRow = '';
@@ -822,7 +874,9 @@ function renderSleep(){
     <div class="log-row"><span>Sleep duration</span><span class="n">${hrs} hrs</span></div>
     ${restingRow}
     ${hrvRow}
+    ${driftRow}
     ${tempRow}
+    ${thinRow}
     ${scoreRow}
   `;
 }
