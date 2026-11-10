@@ -116,31 +116,124 @@ async function ouraGet(path, token, startDate, endDate) {
   return out;
 }
 
-// A period has to be at least this long to count as the night's main sleep.
-// Without a floor, a day whose only record is a short nap gets stored as that
-// night's recovery data — a 12-minute record once produced HRV 8 and a resting
-// HR of 91, which then reads as a catastrophic night rather than as no night.
+// A day's sleep has to total at least this long to count as a night. Without a
+// floor, a day whose only record is a short nap gets stored as that night's
+// recovery data — a 12-minute record once produced HRV 8 and a resting HR of 91,
+// which then reads as a catastrophic night rather than as no night.
 const MIN_MAIN_SLEEP_S = 3 * 3600;
+
+// A fragment has to be at least this long to join an aggregate. Below this a
+// period is a doze rather than a sleep block, and its HRV is noise that would
+// drag the weighted average around.
+const MIN_FRAGMENT_S = 45 * 60;
+
+function dur(p) {
+  return p && p.total_sleep_duration != null ? p.total_sleep_duration : 0;
+}
+
+// Combines a day's sleep fragments into one synthetic period.
+//
+// Durations and stage times add up. HRV is averaged weighted by how long each
+// fragment ran, so a 3-hour block counts for more than a 1-hour one. Resting HR
+// takes the lowest value seen across the day, which is what the field means —
+// it is the overnight low, not an average of lows. Average HR is
+// duration-weighted like HRV. Efficiency is recomputed over the combined
+// fragments rather than averaged, since averaging percentages over unequal
+// spans is wrong.
+function combineFragments(day, periods) {
+  const total = periods.reduce((n, p) => n + dur(p), 0);
+
+  const weighted = (field) => {
+    let sum = 0, weight = 0;
+    for (const p of periods) {
+      const v = p[field];
+      if (v == null) continue;
+      sum += v * dur(p);
+      weight += dur(p);
+    }
+    return weight > 0 ? sum / weight : null;
+  };
+
+  const stage = (field) => {
+    let sum = 0, seen = false;
+    for (const p of periods) {
+      if (p[field] == null) continue;
+      sum += p[field];
+      seen = true;
+    }
+    return seen ? sum : null;
+  };
+
+  const lows = periods.map(p => p.lowest_heart_rate).filter(v => v != null);
+
+  // efficiency is a percentage of time in bed spent asleep; rebuild it from the
+  // underlying durations where they are available.
+  let efficiency = null;
+  const inBed = periods.reduce((n, p) => n + (p.time_in_bed || 0), 0);
+  if (inBed > 0) efficiency = Math.round(total / inBed * 100);
+  else {
+    const w = weighted('efficiency');
+    efficiency = w == null ? null : Math.round(w);
+  }
+
+  return {
+    day,
+    type: 'combined_fragments',
+    fragment_count: periods.length,
+    total_sleep_duration: total,
+    average_hrv: weighted('average_hrv'),
+    average_heart_rate: weighted('average_heart_rate'),
+    lowest_heart_rate: lows.length ? Math.min(...lows) : null,
+    efficiency,
+    deep_sleep_duration: stage('deep_sleep_duration'),
+    rem_sleep_duration: stage('rem_sleep_duration')
+  };
+}
 
 // Oura reports several sleep periods per night — naps and short rests included —
 // and only the main one carries meaningful HRV and resting HR. Prefer an
 // explicit long_sleep; otherwise take the longest period that clears the floor.
-// If nothing clears it, the day has no usable sleep record and gets none.
+//
+// When no single period clears it, fall back to combining the day's fragments.
+// That case is the norm on nightshift: a day's sleep split into two or three
+// blocks of 2-3 hours each is five or six hours of real recorded data, and
+// taking the single-period rule literally threw all of it away. Five of the
+// first six Oura days stored nothing for exactly this reason, and a day with no
+// recovery data falls back to the readiness cap of 70, which reads as a
+// mediocre night rather than as a missing one.
+//
+// The floor still applies to the combined total, so a day whose only records
+// are genuine naps continues to store nothing.
 function pickMainSleep(periods) {
-  const byDay = new Map();
+  const candidates = new Map();
   for (const p of periods) {
-    const day = p.day;
-    if (!day) continue;
-    if ((p.total_sleep_duration || 0) < MIN_MAIN_SLEEP_S) continue;
+    if (!p.day) continue;
+    if (!candidates.has(p.day)) candidates.set(p.day, []);
+    candidates.get(p.day).push(p);
+  }
 
-    const existing = byDay.get(day);
-    if (!existing) { byDay.set(day, p); continue; }
+  const byDay = new Map();
+  for (const [day, dayPeriods] of candidates) {
+    let best = null;
+    for (const p of dayPeriods) {
+      if (dur(p) < MIN_MAIN_SLEEP_S) continue;
+      if (!best) { best = p; continue; }
 
-    const pIsLong = p.type === 'long_sleep';
-    const eIsLong = existing.type === 'long_sleep';
-    if (pIsLong && !eIsLong) { byDay.set(day, p); continue; }
-    if (!pIsLong && eIsLong) continue;
-    if ((p.total_sleep_duration || 0) > (existing.total_sleep_duration || 0)) byDay.set(day, p);
+      const pIsLong = p.type === 'long_sleep';
+      const bIsLong = best.type === 'long_sleep';
+      if (pIsLong && !bIsLong) { best = p; continue; }
+      if (!pIsLong && bIsLong) continue;
+      if (dur(p) > dur(best)) best = p;
+    }
+
+    if (best) { byDay.set(day, best); continue; }
+
+    const fragments = dayPeriods.filter(p => dur(p) >= MIN_FRAGMENT_S);
+    if (fragments.length < 2) continue;
+    const total = fragments.reduce((n, p) => n + dur(p), 0);
+    if (total < MIN_MAIN_SLEEP_S) continue;
+
+    byDay.set(day, combineFragments(day, fragments));
   }
   return byDay;
 }
@@ -225,23 +318,34 @@ export default async function handler(req, res) {
       // and the dashboard then treats it as the latest night.
       if (!s && !sleepScoreByDay.has(day) && !(r && r.score != null)) continue;
 
-      rows.push({
+      // Only fields we actually have are sent. The upsert merges on log_date, so
+      // a key present with a null value overwrites whatever is already stored —
+      // which meant a re-sync over a day Oura no longer returns a main sleep for
+      // wiped a row that had synced correctly days earlier. Omitting the key
+      // instead leaves the stored value alone, so a re-sync can only ever add.
+      // The trade-off is that a value Oura later retracts is never cleared;
+      // that is the right way round for a record of nights already slept.
+      const row = {
         log_date: day,
-        // total_sleep_duration is seconds of actual sleep, excluding awake time.
-        sleep_duration_ms: s && s.total_sleep_duration != null ? s.total_sleep_duration * 1000 : null,
-        avg_heart_rate: s && s.average_heart_rate != null ? s.average_heart_rate : null,
-        resting_hr: s && s.lowest_heart_rate != null ? s.lowest_heart_rate : null,
-        hrv_ms: s && s.average_hrv != null ? s.average_hrv : null,
-        sleep_efficiency: s && s.efficiency != null ? s.efficiency : null,
-        deep_sleep_ms: s && s.deep_sleep_duration != null ? s.deep_sleep_duration * 1000 : null,
-        rem_sleep_ms: s && s.rem_sleep_duration != null ? s.rem_sleep_duration * 1000 : null,
-        sleep_score: sleepScoreByDay.has(day) ? sleepScoreByDay.get(day) : null,
-        readiness_score: r && r.score != null ? r.score : null,
-        temp_deviation_c: r && r.temperature_deviation != null ? r.temperature_deviation : null,
-        spo2_pct: contributors.spo2 != null ? contributors.spo2 : null,
         source: 'oura',
         updated_at: new Date().toISOString()
-      });
+      };
+      const put = (key, value) => { if (value != null) row[key] = value; };
+
+      // total_sleep_duration is seconds of actual sleep, excluding awake time.
+      put('sleep_duration_ms', s && s.total_sleep_duration != null ? s.total_sleep_duration * 1000 : null);
+      put('avg_heart_rate', s && s.average_heart_rate != null ? s.average_heart_rate : null);
+      put('resting_hr', s && s.lowest_heart_rate != null ? s.lowest_heart_rate : null);
+      put('hrv_ms', s && s.average_hrv != null ? s.average_hrv : null);
+      put('sleep_efficiency', s && s.efficiency != null ? s.efficiency : null);
+      put('deep_sleep_ms', s && s.deep_sleep_duration != null ? s.deep_sleep_duration * 1000 : null);
+      put('rem_sleep_ms', s && s.rem_sleep_duration != null ? s.rem_sleep_duration * 1000 : null);
+      put('sleep_score', sleepScoreByDay.has(day) ? sleepScoreByDay.get(day) : null);
+      put('readiness_score', r && r.score != null ? r.score : null);
+      put('temp_deviation_c', r && r.temperature_deviation != null ? r.temperature_deviation : null);
+      put('spo2_pct', contributors.spo2 != null ? contributors.spo2 : null);
+
+      rows.push(row);
     }
 
     if (!rows.length) {
@@ -253,31 +357,54 @@ export default async function handler(req, res) {
 
     rows.sort((a, b) => a.log_date.localeCompare(b.log_date));
 
-    const up = await fetch(`${SUPABASE_URL}/rest/v1/daily_log?on_conflict=log_date`, {
-      method: 'POST',
-      headers: { ...sbHeaders(SERVICE_KEY), Prefer: 'resolution=merge-duplicates' },
-      body: JSON.stringify(rows)
-    });
+    // PostgREST requires every object in one bulk insert to carry the same keys,
+    // and rows now differ in shape — a day with a main sleep has the sleep
+    // columns, a scores-only day does not. Group by key signature and send one
+    // request per shape. In practice that is two requests at most, well inside
+    // the rate limit that a request-per-day loop would trip.
+    const groups = new Map();
+    for (const row of rows) {
+      const sig = Object.keys(row).sort().join(',');
+      if (!groups.has(sig)) groups.set(sig, []);
+      groups.get(sig).push(row);
+    }
 
-    if (!up.ok) {
-      const t = await up.text();
-      console.error('Supabase upsert failed', t);
-      return res.status(502).json({ ok: false, error: t.slice(0, 300) });
+    for (const group of groups.values()) {
+      const up = await fetch(`${SUPABASE_URL}/rest/v1/daily_log?on_conflict=log_date`, {
+        method: 'POST',
+        headers: { ...sbHeaders(SERVICE_KEY), Prefer: 'resolution=merge-duplicates' },
+        body: JSON.stringify(group)
+      });
+
+      if (!up.ok) {
+        const t = await up.text();
+        console.error('Supabase upsert failed', t);
+        return res.status(502).json({ ok: false, error: t.slice(0, 300) });
+      }
     }
 
     const latest = rows[rows.length - 1];
     const withHrv = rows.filter(r => r.hrv_ms != null).length;
+
+    // Which days were rebuilt from fragments rather than a single period. On a
+    // nightshift block this is most of them, and it is the first thing to look
+    // at when a night's numbers read oddly.
+    const combined = [...mainSleep.entries()]
+      .filter(([, s]) => s.type === 'combined_fragments')
+      .map(([day, s]) => ({ day, fragments: s.fragment_count }));
+
     return res.status(200).json({
       ok: true,
       synced: rows.length,
       with_hrv: withHrv,
+      combined_from_fragments: combined,
       range: { from: startDate, to: endDate },
       latest: {
         date: latest.log_date,
         sleep_hrs: latest.sleep_duration_ms ? +(latest.sleep_duration_ms / 3600000).toFixed(1) : null,
-        hrv_ms: latest.hrv_ms,
-        resting_hr: latest.resting_hr,
-        readiness_score: latest.readiness_score
+        hrv_ms: latest.hrv_ms != null ? latest.hrv_ms : null,
+        resting_hr: latest.resting_hr != null ? latest.resting_hr : null,
+        readiness_score: latest.readiness_score != null ? latest.readiness_score : null
       }
     });
   } catch (e) {
