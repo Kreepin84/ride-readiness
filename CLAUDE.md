@@ -21,7 +21,26 @@ prefer them over anything an app estimates.
   - **The trainer does not read high.** The 1 Nov outdoor 20-min (335W) beat the 27 Oct
     Zwift 20-min (326W) four days apart. If anything the Kickr reads low, so don't discount
     indoor numbers against outdoor ones.
-  - Zwift weight must be correct — a wrong value invalidates a race result.
+  - Zwift weight must be correct — a wrong value invalidates a race result. It is currently
+    right (82kg). One historical race, 2 Oct 2026, recorded 50kg and produced a nonsense
+    17.3 W/kg; that was a one-off entry error, not a pattern.
+- **Weight fluctuates 82–87, settling 82–84. `goalWeight` is 80** (set 11 Nov, from 75).
+  - **The swing is glycogen and water, not tissue.** Each gram of muscle glycogen binds
+    ~3g of water, so depleted-to-loaded is worth 1.5–2.5kg by itself; add post-effort fluid
+    retention and a big eating day and 82 → 87 in 72 hours needs no change in fat or muscle.
+    Never read a short-term swing as a body-composition change.
+  - **80 is reachable by trimming the top of the swing, not cutting from the bottom.** He
+    was 80.4kg in September with no sprint cost. Moving the average down means moderating
+    the 86–87 excursions; it does not mean restricting from 82.
+  - **75 was the old target and was incoherent** — 7kg below his natural range while he is
+    deliberately doing leg work to build sprint mass. Don't reinstate it.
+  - **He eats heavily on leg day by design**, for repair and muscle growth. That is correct
+    and should not be discouraged; the magnitude of the swing is the only question.
+  - **Do not help him cut weight into a race.** If "getting back down for race day" ever
+    becomes active fluid or carb restriction rather than the leg-day load clearing on its
+    own, say so plainly and stop: the weight lost is the glycogen a crit runs on, and with
+    a raised haematocrit, deliberate dehydration concentrates an already-elevated red cell
+    mass. This one overrides any performance argument.
 - **VT1 is above 200W and probably above 225W. The old 175W / 120bpm is stale.** Measured
   11 Nov on a locked ERG block: 200W held for 58 min at 124.8bpm average with **0.38%
   Pw:HR decoupling**, and 225W for a further 34 min at 131.5bpm with ~1.5bpm of drift.
@@ -53,22 +72,45 @@ prefer them over anything an app estimates.
   averages 8.6 h/week (range 3.6–11.9), not the 4.6 h/week figure from August — that number
   is long stale and shouldn't be quoted. When he asks about adding hours, check the recovery
   trend first; the limiter has been rest days, not volume.
+- **Volume plan from 11 Nov: `weeklyHoursTarget` 7.4 → 11**, agreed alongside a commitment
+  to take rest days properly. Build it **per 16-day rotation, not per week** — 11 h/week is
+  ~25h per rotation, weighted into the off blocks: nights 4h, off-block-A 8h, dayshift 3h,
+  off-block-B 10h, with **one full rest day in every block** (4 per rotation, up from the
+  2.4 he was averaging). Ramp over three rotations: 9.5 → 10.2 → 11. Added hours go in the
+  190–215W aerobic band, not into more intensity — Z4+ is already ~15% of the month.
+  Judge whether it's being absorbed on **block-median HRV and resting HR**, never day to day.
 - **Races A Grade crits** — outcomes turn on repeated 30s surges, not steady-state power.
   Micro-intervals (30/15s, 40/20s) target exactly that and are a current focus.
 - **Strong sprinter with a genuine kick.** All-time outdoor bests: **5s 1364W** (1325W in
   2026), **15s 1213W**, **30s 952W**, **1min 666W** — about 16.6 / 14.8 / 11.6 / 8.1 W/kg at
   82.2kg. Steep, high-peaking curve.
+  - **The sprint has not declined, whatever it feels like.** 2025 → 2026 outdoor bests:
+    15s 1140 → **1213W** (+6.4%), 30s 931 → **952W** (+2.3%), 1min 666 → 666W (level).
+    Only 5s is down, 1364 → 1325 (−2.9%), and a single five-second sample depends entirely
+    on whether a true maximal standing jump happened that year. Recent numbers are strong:
+    **940W/30s on 31 Oct** and **654W/1min on 6 Nov**, both second-best-ever, at current
+    weight. If he says the sprint has dropped, check the year-on-year table before agreeing.
+  - **Zwift sprint numbers are not comparable to these.** These are outdoor, on the Favero
+    pedals, in races. A Zwift sprint is trainer-measured from a standing start with no
+    lead-out and no adrenaline, and will read lower for reasons unrelated to his legs.
+    Compare Zwift to Zwift only, same warm-up and gear each time.
   - **Don't profile him off the 1 Nov race** (5s 1095W, 15s 846W, 30s 829W, almost flat
     between 15s and 30s). That was a **deliberate seated sprint he was trying out**, not how
     he normally sprints — it cost roughly 370W at 15s against his standing best. A flat
     15s/30s profile is the signature of sitting down, not of his physiology.
   - He is **not** limited to break finishes. A bunch sprint off a good wheel suits him.
     Finishes are lost to positioning, not sprint power.
-- **W/kg targets.** 4 W/kg is reached. 4.5 needs 370W at current weight or 349W at 77.5kg —
+- **W/kg targets.** 4 W/kg is reached (3.99 at 82.2kg). At the 80kg goal, 328W is
+  **4.10 W/kg** with no extra watts. 4.5 needs 370W at current weight or 349W at 77.5kg —
   weight is the larger lever and the realistic next target. 5 W/kg means 411W or 65.6kg;
   treat it as out of scope rather than a goal to plan around. The TrainerRoad figure he
   quotes (11 h/week for 9–12 months) moves the odds of reaching 5 W/kg to about 1 in 16 —
   that describes how rare 5 W/kg is, not a route to it.
+- **The two goal events want opposite things, and this is unresolved.** A-grade crits are
+  flat and decided by absolute watts and repeated surges, where his sprint is the weapon and
+  leg mass is an asset — nobody wins a bunch kick on W/kg. The Mudgee Classic Maxi (170km,
+  ~1,686m) is the opposite and rewards W/kg. Don't optimise for both at once, and don't
+  quietly assume lighter is better: say which event the advice is for.
 
 ### Judging progress
 
