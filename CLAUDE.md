@@ -93,14 +93,22 @@ FTP is a noisy progress signal and is easily moved by one good twenty minutes. P
 
 These override training reads — see Tone at the bottom of this file.
 
-- **HRV has roughly halved and resting HR has risen** over the fortnight to 10 Nov: HRV 26 →
-  7–12ms, resting HR 59 → 70–76. Both markers moving together is the pattern that means
-  something.
-- **The absolute values are low and discordant with his fitness.** Overnight HRV in the
-  single digits and a resting HR in the 70s don't match a 328W FTP. Candidate causes split
-  into measurement (ring fit — he changed from middle to index finger on 11 Nov, which
-  resets the baseline; allow two weeks on one finger before reading the trend) and
-  everything else.
+- **HRV is noisy, not monotonic. Read it by block, never day to day.** Medians across the
+  roster cycle, 23 Oct – 11 Nov: nights 20, off 13, dayshift 11.5, off 8, nights 17.
+  Individual nights range 7–33. A single low reading means nothing.
+  - **The real signal was the 5–9 Nov run** (7, 8, 7, 10, 8 with resting HR 72–82) — five
+    consecutive low nights spanning the end of a dayshift block, a race, and a 90km ride.
+    Sustained runs are what to act on.
+  - **Caution: an earlier read of this data claimed HRV had "roughly halved" from a stable
+    26.** That was computed before the fragmented-sleep backfill and was wrong — six days
+    were missing, including a 33 on 27 Oct. Always confirm the series is complete before
+    calling a trend.
+- **The absolute values may be lower than reality.** Overnight HRV in the single digits with
+  a resting HR in the 70s doesn't match a 328W FTP, and that discordance is itself a clue.
+  He moved the ring from middle to index finger on 11 Nov; that same day returned HRV 22.8
+  and resting HR 64. Ring fit is a live candidate for the low readings. Allow two weeks on
+  one finger before reading any trend, and don't attribute the change to recovery while the
+  measurement confound is unresolved.
 - **Don't coach around the second group.** Raised haematocrit, a 137/87 BP reading, and
   exogenous testosterone all independently raise resting HR and lower HRV. If the markers
   stay low after a clean two weeks of measurement, that is a GP and bloods conversation, not
