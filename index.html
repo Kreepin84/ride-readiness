@@ -463,15 +463,56 @@ const CAPACITY_BY_BLOCK = {
   'Off Block B':      [4.25, 1.5, 3.25, 0]
 };
 
-function dailyCapacityHours(dateObj){
+// What each day of the rotation is meant to be ridden AT, parallel to
+// CAPACITY_BY_BLOCK. null is a rest day.
+const INTENSITY_BY_BLOCK = {
+  'Nightshift Block': ['easy', 'aerobic', 'easy', null],
+  'Off Block A':      ['easy', 'aerobic', 'aerobic', null],
+  'Dayshift Block':   [null, 'easy', 'aerobic', 'easy'],
+  'Off Block B':      ['aerobic', 'quality', 'aerobic', null]
+};
+
+// Mid-band power for each intensity, in WATTS — the bands the sessions actually name:
+// easy 150-175W, aerobic 190-215W, quality 300-315W.
+//
+// Stored as watts rather than as a fraction of FTP on purpose. These bands are
+// physiological (they hang off VT1 and critical power), so they do NOT move when FTP
+// moves — CLAUDE.md is explicit about never recomputing them from a new FTP. Dividing
+// by the current FTP at read time means the load target falls as FTP rises, which is
+// correct: the same ride is a smaller fraction of a bigger engine.
+const INTENSITY_WATTS = { easy: 162, aerobic: 202, quality: 307, race: 330 };
+
+function blockKeyFor(dateObj){
   const anchor = new Date(data.rosterAnchor+'T00:00:00');
   const cyclePos = ((dayDiff(dateObj, anchor) % 16)+16) % 16;
-  const key = cyclePos<4 ? 'Nightshift Block'
-            : cyclePos<8 ? 'Off Block A'
-            : cyclePos<12 ? 'Dayshift Block'
-            : 'Off Block B';
-  const hrs = CAPACITY_BY_BLOCK[key][cyclePos % 4];
+  return {
+    key: cyclePos<4 ? 'Nightshift Block'
+       : cyclePos<8 ? 'Off Block A'
+       : cyclePos<12 ? 'Dayshift Block'
+       : 'Off Block B',
+    idx: cyclePos % 4
+  };
+}
+
+function dailyCapacityHours(dateObj){
+  const { key, idx } = blockKeyFor(dateObj);
+  const hrs = CAPACITY_BY_BLOCK[key][idx];
   return hrs == null ? 0 : hrs;
+}
+
+// The load the plan asks for on a given day, so the weekly TSS goal rotates with the
+// roster exactly as the hours goal does rather than being one flat number. Totals
+// ~895 TSS a rotation, or ~391 a week at 37.9 TSS/hr — deliberately BELOW the 45
+// he has been averaging, because the plan adds hours without adding intensity.
+function dailyCapacityTSS(dateObj){
+  const hrs = dailyCapacityHours(dateObj);
+  const ftp = Number(data.ftp);
+  if(!hrs || !Number.isFinite(ftp) || ftp <= 0) return 0;
+  const { key, idx } = blockKeyFor(dateObj);
+  const watts = INTENSITY_WATTS[INTENSITY_BY_BLOCK[key][idx]];
+  if(watts == null) return 0;
+  const intensity = watts / ftp;
+  return intensity * intensity * hrs * 100;
 }
 
 // ---- Supabase data access ----
@@ -774,9 +815,10 @@ function weeklyVolumeSeries(weeks=8){
     const start = new Date(end); start.setDate(start.getDate()-7);
     const weekRides = recentRides.filter(r => { const d = new Date(r.ride_date+'T00:00:00'); return d >= start && d < end; });
     const secs = weekRides.reduce((s,r) => s + (r.moving_time_s||0), 0);
-    let target = 0;
+    let target = 0, tssTarget = 0;
     for(let d = new Date(start); d < end; d.setDate(d.getDate()+1)){
       target += dailyCapacityHours(new Date(d));
+      tssTarget += dailyCapacityTSS(new Date(d));
     }
     // Adherence = how closely that week's rides matched what was actually prescribed
     // (right effort type, duration, power for the day), not just whether hours were logged.
@@ -791,7 +833,13 @@ function weeklyVolumeSeries(weeks=8){
     const hours = secs/3600;
     const tssPerHour = (tss!=null && hours > 0.25) ? tss/hours : null;
 
-    buckets.push({ label: i===0 ? 'This wk' : `-${i}w`, hours, target, avgScore, tss, tssPerHour });
+    // Planned density, for comparing like with like: the target is ~38 TSS/hr because
+    // the plan adds hours without adding intensity. Judging actual density against the
+    // trailing average alone would call 45 "normal" when the plan asks for less.
+    const plannedDensity = (tssTarget > 0 && target > 0) ? tssTarget/target : null;
+
+    buckets.push({ label: i===0 ? 'This wk' : `-${i}w`, hours, target, avgScore,
+                   tss, tssPerHour, tssTarget, plannedDensity });
   }
   return buckets;
 }
@@ -849,20 +897,40 @@ function loadDensitySummary(series){
   const withDensity = series.filter(s => s.tssPerHour != null);
   if(withDensity.length < 2) return '';
   const cur = withDensity[withDensity.length-1];
-  const prior = withDensity.slice(0, -1);
-  const avg = prior.reduce((a,s)=>a+s.tssPerHour, 0) / prior.length;
-  const delta = cur.tssPerHour - avg;
+
+  const row = (label, value) =>
+    `<div class="card-note" style="display:flex; justify-content:space-between; align-items:baseline; gap:10px;">
+       <span>${label}</span>
+       <span style="font-family:'JetBrains Mono',monospace;">${value}</span>
+     </div>`;
+
+  // Weekly load against the plan's own rotating target, which moves with the roster
+  // exactly as the hours target does — a nightshift week asks for far less than an
+  // off-block week, so one flat number would be wrong most of the time.
+  let loadRow = '';
+  if(cur.tss != null && cur.tssTarget > 0){
+    const pct = cur.tss/cur.tssTarget*100;
+    const c = pct > 125 ? 'var(--red)' : pct > 110 ? 'var(--amber)' : 'var(--cyan)';
+    loadRow = row('Weekly load',
+      `<span style="color:${c};">${Math.round(cur.tss)}</span>` +
+      `<span style="color:var(--muted);"> / ${Math.round(cur.tssTarget)} planned</span>`);
+  }
+
+  // Density against what the plan asks for, not against what he has been doing.
+  // The trailing average would call 45 TSS/hr normal when the plan wants ~38.
+  const planned = cur.plannedDensity;
+  const ref = planned != null ? planned
+    : withDensity.slice(0,-1).reduce((a,s)=>a+s.tssPerHour,0) / (withDensity.length-1);
+  const delta = cur.tssPerHour - ref;
   const arrow = delta > 3 ? '▲' : delta < -3 ? '▼' : '▬';
-  // Rising density is the one worth flagging; falling density while hours build
-  // is exactly what the plan wants, so it reads neutral rather than good-or-bad.
-  const color = delta > 5 ? 'var(--red)' : delta > 3 ? 'var(--amber)' : 'var(--cyan)';
-  return `<div class="card-note" style="display:flex; justify-content:space-between; align-items:baseline; gap:10px;">
-      <span>Load density</span>
-      <span style="font-family:'JetBrains Mono',monospace; color:${color};">
-        ${arrow} ${Math.round(cur.tssPerHour)} TSS/hr
-        <span style="color:var(--muted);">vs ${Math.round(avg)} avg</span>
-      </span>
-    </div>`;
+  // Rising density is the one worth flagging; falling density while hours build is
+  // exactly what the plan wants, so it reads neutral rather than good-or-bad.
+  const dColor = delta > 5 ? 'var(--red)' : delta > 3 ? 'var(--amber)' : 'var(--cyan)';
+  const densityRow = row('Load density',
+    `<span style="color:${dColor};">${arrow} ${Math.round(cur.tssPerHour)} TSS/hr</span>` +
+    `<span style="color:var(--muted);"> vs ${Math.round(ref)} ${planned != null ? 'planned' : 'avg'}</span>`);
+
+  return loadRow + densityRow;
 }
 
 // ---- Ride vs. prescription auto-scoring ----
