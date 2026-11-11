@@ -76,6 +76,20 @@ optional `OURA_REDIRECT_URI` and `SYNC_SECRET`.
   record carrying HRV and resting HR. The sync pads the end date by a day and filters after.
 - **Several sleep periods are returned per night** (`long_sleep`, `sleep`, `late_nap`,
   `rest`). Only the main one has meaningful HRV. Prefer `long_sleep`, then longest duration.
+- **On nightshift there is often no main sleep period at all.** Day-sleep splits into two
+  or three blocks of 2–3h, none of which clears the 3h floor that keeps naps from being
+  stored as nights. Five of the first six Oura days stored nothing for this reason. The
+  sync now falls back to combining a day's fragments (each ≥45 min, combined total ≥3h)
+  into one synthetic period: durations and stages sum, HRV and average HR are weighted by
+  fragment length, resting HR is the lowest seen across the day. `combined_from_fragments`
+  in the sync response says which days were rebuilt this way — check it first when a
+  night's numbers read oddly.
+- **The upsert must not send nulls.** It merges on `log_date`, so a key present with a null
+  value overwrites what's stored, and a re-sync over a day Oura no longer returns sleep for
+  used to wipe a row that had synced correctly days earlier. Only non-null fields go in the
+  payload. PostgREST requires uniform keys per request, so rows are grouped by key
+  signature and sent one request per shape — never one request per day, which trips the
+  rate limit.
 - Responses paginate via `next_token`; a long backfill needs to follow it.
 
 ### Supabase tables
