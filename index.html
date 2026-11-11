@@ -242,31 +242,71 @@ let recentRides = [];
 let rideRatings = {};
 
 // ---- Session library ----
+// Sessions are written to the 11 h/week plan set on 11 Nov 2026, which is built per
+// 16-day rotation rather than per week: ~25h a rotation, weighted into the off blocks
+// where the time and the recovery actually are, with ONE full rest day in every block.
+//
+// Two things these deliberately do NOT do:
+//
+//   1. Add intensity. Z4+ already runs ~15% of the month. Every hour added over the
+//      old 7.4 h/week plan goes in the 190-215W aerobic band, which 11 Nov measured
+//      directly (200W for 58 min at 0.38% decoupling, 225W for a further 34).
+//   2. Name a zone without a wattage. "Z2" spans 181-246W and the aerobic target is
+//      the narrower 190-215W, so every session carries the actual numbers.
+//
+// Power references: easy/fat-ox 150-175W, aerobic 190-215W, threshold 300-315W
+// (brackets critical power of 315), VO2 345-390W.
 const NIGHT_SESSIONS = [
-  "Easy spin only, 30–40 min Z1–Z2, or rest. Body's still adjusting.",
-  "Rest or very easy Z1 spin (20–30 min).",
-  "Short Z2 endurance if feeling good (45 min), otherwise rest.",
-  "Rest — final night, prioritize sleep going into your off block."
+  "Easy spin, 60–75 min at 150–175W. Body's still adjusting — nothing above easy.",
+  "Z2 endurance, 90 min at 190–215W. Easy only — you're on shift tonight.",
+  "Easy spin, 60–75 min at 150–175W. Drop it if the day's sleep was poor.",
+  "Rest — no riding. Final night, prioritise sleep going into the off block."
 ];
 const DAY_SESSIONS = [
-  "Easy Z1–Z2 spin only, 30–45 min, or rest — first day back on shift.",
-  "Steady Z2 endurance, 60–75 min.",
-  "Threshold: 2 x 15min Z4.",
-  "Easy spin or rest, heading into next off block."
+  "Rest — no riding. First day back on shift with a 6am start.",
+  "Easy spin, 60 min at 150–175W. A 4am session stays easy: core temp is at its low and you're fasted.",
+  "Z2 endurance, 60–75 min at 190–215W. Still easy — no threshold work at 4am.",
+  "Easy spin, 45–60 min at 150–175W, or rest heading into the off block."
 ];
-const OFF_SESSIONS = {
-  base:  ["Long endurance ride, Z2, 2.5–4 hrs, no surges yet.",
-          "Threshold: 2 x 15min Z4, 5min recovery.",
-          "VO2: 4 x 3min Z5, 3min recovery.",
-          "Recovery spin + skills/cadence work."],
-  build: ["Long ride with 4–6 x 5min race-pace surges (Z4–Z5) built in.",
-          "Threshold: 3 x 12min Z4, 4min recovery.",
-          "VO2: 5 x 3min Z5, shorter recovery (2min) — or full-gas race simulation.",
-          "Recovery spin + skills/cadence work."],
-  peak:  ["Shorter long ride (2–2.5 hrs), race-pace efforts only.",
-          "Threshold: 2 x 20min Z4 — race-pace rehearsal.",
-          "VO2/anaerobic: 6 x 2min Z5–Z6, full recovery.",
-          "Recovery spin + skills/cadence work."]
+
+// The two off blocks had been sharing one array, so indices 2 and 3 were serving both
+// the post-nightshift block and the post-dayshift one — which meant a VO2 session could
+// land on day 3 straight off four nightshifts. They're separate now.
+//
+// OFF_A follows nightshift: aerobic only, no quality session anywhere in it. The
+// "first two days easy" rule is encoded in the text here rather than special-cased in
+// sessionForDate().
+const OFF_A_SESSIONS = {
+  base:  ["Easy Z1–Z2 only, 75–90 min at 150–175W — still catching up on sleep debt from nights.",
+          "Easy endurance, 2.5–3 hrs at 190–215W. Long but easy, no efforts — day 2 off nights.",
+          "Long aerobic, 3.5–4 hrs at 190–215W. Steady, no surges.",
+          "Rest — full day off the bike."],
+  build: ["Easy Z1–Z2 only, 75–90 min at 150–175W — still catching up on sleep debt from nights.",
+          "Easy endurance, 2.5–3 hrs at 190–215W. Long but easy, no efforts — day 2 off nights.",
+          "Long aerobic, 3.5–4 hrs at 190–215W, with 4–6 x 30s surges in the last hour only.",
+          "Rest — full day off the bike."],
+  peak:  ["Easy Z1–Z2 only, 75–90 min at 150–175W — still catching up on sleep debt from nights.",
+          "Easy endurance, 2–2.5 hrs at 190–215W. Long but easy, no efforts — day 2 off nights.",
+          "Long aerobic, 3–3.5 hrs at 190–215W, with 4–6 x 30s surges in the last hour only.",
+          "Rest — full day off the bike."]
+};
+
+// OFF_B follows dayshift and is the freshest block in the rotation, so it carries the
+// rotation's one quality session plus the biggest aerobic rides. On a race weekend
+// findRaceSundayInBlock() replaces these anyway.
+const OFF_B_SESSIONS = {
+  base:  ["Long aerobic, 4–4.5 hrs at 190–215W. Biggest ride of the rotation, no surges.",
+          "Threshold: 2 x 20min at 300–315W, 5min recovery. ~90 min total.",
+          "Z2 endurance, 3–3.5 hrs at 190–215W.",
+          "Rest — full day off the bike."],
+  build: ["Long aerobic, 4–4.5 hrs at 190–215W, with 4–6 x 5min at 300–315W in the back half.",
+          "Micro-intervals: 3 x (13 x 30/15s) at 380–420W — the crit-specific session.",
+          "Z2 endurance, 3–3.5 hrs at 190–215W.",
+          "Rest — full day off the bike."],
+  peak:  ["Long aerobic, 3–3.5 hrs at 190–215W, race-pace efforts only in the last hour.",
+          "Micro-intervals: 3 x (13 x 30/15s) at 380–420W, or full-gas race simulation.",
+          "Z2 endurance, 2.5–3 hrs at 190–215W.",
+          "Rest — full day off the bike."]
 };
 
 // Full 16-day roster rotations (nightshift + off + dayshift + off) that make up the
@@ -325,23 +365,26 @@ function sessionForDate(dateObj){
   const rotation = programRotation(dateObj);
   const phase = phaseForRotation(rotation);
   let block, idx, text;
-  // The Off Block at cyclePos 4-7 always immediately follows the Nightshift Block (0-3) in the
-  // fixed roster rotation. The first two days of that specific block default to easy riding only —
-  // the body's still catching up on sleep debt right off nights, so no structured hard session
-  // gets prescribed there regardless of where it'd otherwise fall in the base/build/peak rotation.
-  const isPostNightshiftOffBlock = (cyclePos>=4 && cyclePos<8);
+  // The two off blocks are NOT interchangeable and have separate session arrays.
+  // cyclePos 4-7 always follows the nightshift block, so it is aerobic only and its
+  // first two days are the easiest in the rotation — the body is still clearing sleep
+  // debt off four nights. cyclePos 12-15 follows dayshift, is the freshest point in
+  // the 16 days, and is where the rotation's one quality session and biggest rides go.
   if(cyclePos<4){ block='Nightshift Block'; idx=cyclePos; text=NIGHT_SESSIONS[idx]; }
-  else if(cyclePos<8){
-    block='Off Block'; idx=cyclePos-4;
-    text = (idx<2)
-      ? "Easy Z1–Z2 riding only, 45–90 min — body's still catching up from nightshift, no hard efforts."
-      : OFF_SESSIONS[phase][idx];
-  }
+  else if(cyclePos<8){ block='Off Block'; idx=cyclePos-4; text=OFF_A_SESSIONS[phase][idx]; }
   else if(cyclePos<12){ block='Dayshift Block'; idx=cyclePos-8; text=DAY_SESSIONS[idx]; }
-  else { block='Off Block'; idx=cyclePos-12; text=OFF_SESSIONS[phase][idx]; }
+  else { block='Off Block'; idx=cyclePos-12; text=OFF_B_SESSIONS[phase][idx]; }
   const dayLabels = ['Day 1','Day 2','Day 3','Day 4'];
-  let isHard = (block!=='Nightshift Block') && (idx===1 || idx===2);
-  if(isPostNightshiftOffBlock && idx<2) isHard = false;
+
+  // Exactly one hard session in the rotation, and it sits on day 2 of the off block
+  // that follows DAYSHIFT — the freshest point in the 16 days. Nothing in the
+  // nightshift block, the dayshift block or the post-nightshift off block is hard:
+  // a hard effort before a 12h shift on the truck is a safety question, and the
+  // post-nights block is still clearing sleep debt. The old rule marked idx 1 and 2
+  // of every non-nightshift block as hard, which put three hard days in a rotation
+  // and one of them straight off four nightshifts.
+  const isPostDayshiftOffBlock = (cyclePos>=12);
+  let isHard = isPostDayshiftOffBlock && idx===1;
 
   if(block==='Off Block'){
     const raceSun = findRaceSundayInBlock(dateObj);
@@ -359,10 +402,15 @@ function sessionForDate(dateObj){
             : 'Race day — HEZ racing, 45–90 min, full gas.';
         isHard = true;
       } else if(key===dayAfterKey){
-        text = 'Z1 recovery spin, 30–60 min, very easy legs only after racing.';
+        text = 'Z1 recovery spin, 45–60 min at 150–175W. Very easy legs only after racing.';
+        isHard = false;
+      } else if(!/^Rest —/.test(text)){
+        // A race weekend reshapes the block, but it must not eat the block's rest
+        // day — that was the whole point of the 11 Nov plan. Only the riding days
+        // get rewritten; a Rest day stays a Rest day.
+        text = 'Z2 endurance, 2–2.5 hrs at 190–215W. Steady aerobic around the weekend race.';
         isHard = false;
       } else {
-        text = 'Z2 endurance, 90–150 min, steady aerobic — staying fresh for or recovering from the weekend race.';
         isHard = false;
       }
     }
@@ -400,11 +448,30 @@ function findRaceSundayInBlock(dateObj){
   return null;
 }
 
+// Hours the plan actually asks for on each day of the rotation, taken from the
+// midpoint of the session prescribed there. A flat per-block figure used to be good
+// enough, but it gave every day of a block the same target including the rest days,
+// and it couldn't tell the two off blocks apart now that they carry different loads.
+//
+// Totals: nights 3.7h, off-A 7.9h, dayshift 3.0h, off-B 9.0h = 23.6h per 16-day
+// rotation, which is 10.3 h/week against the 11 h/week target. The gap is deliberate
+// — the target is the ceiling of the ramp, and days run long more often than short.
+const CAPACITY_BY_BLOCK = {
+  'Nightshift Block': [1.1, 1.5, 1.1, 0],
+  'Off Block A':      [1.4, 2.75, 3.75, 0],
+  'Dayshift Block':   [0, 1.0, 1.1, 0.9],
+  'Off Block B':      [4.25, 1.5, 3.25, 0]
+};
+
 function dailyCapacityHours(dateObj){
-  const block = sessionForDate(dateObj).block;
-  if(block === 'Off Block') return 2.5;
-  if(block === 'Nightshift Block') return 0.75;
-  return 1.0;
+  const anchor = new Date(data.rosterAnchor+'T00:00:00');
+  const cyclePos = ((dayDiff(dateObj, anchor) % 16)+16) % 16;
+  const key = cyclePos<4 ? 'Nightshift Block'
+            : cyclePos<8 ? 'Off Block A'
+            : cyclePos<12 ? 'Dayshift Block'
+            : 'Off Block B';
+  const hrs = CAPACITY_BY_BLOCK[key][cyclePos % 4];
+  return hrs == null ? 0 : hrs;
 }
 
 // ---- Supabase data access ----

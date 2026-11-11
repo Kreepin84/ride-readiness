@@ -180,7 +180,24 @@ coming up:
   session in the afternoon before a 12h overnight shift on the truck is a safety question,
   whatever the training data says.
 - The first two days of the off block that follows nights are easy-only — the body is still
-  catching up on sleep debt. This is encoded in `sessionForDate()`.
+  catching up on sleep debt. Encoded in `OFF_A_SESSIONS`, not as a special case in
+  `sessionForDate()`.
+- **The two off blocks are not interchangeable and have separate session arrays.**
+  `OFF_A_SESSIONS` (cyclePos 4–7, post-nights) is aerobic only and carries no quality
+  session at all. `OFF_B_SESSIONS` (cyclePos 12–15, post-dayshift) is the freshest point in
+  the rotation and holds the single hard session plus the biggest rides. They shared one
+  array until 12 Nov, which meant a VO2 session could land on day 3 straight off four
+  nightshifts.
+- **Exactly one planned hard session per rotation**, on day 2 of the post-dayshift off
+  block. Nothing in the nightshift block, the dayshift block or the post-nights off block is
+  hard. `dailyCapacityHours()` reads from `CAPACITY_BY_BLOCK`, the per-day hours the plan
+  asks for: 3.7 + 7.9 + 3.0 + 9.0 = 23.6h a rotation, or 10.3 h/week against the 11 target.
+- **A race weekend reshapes an off block and can cost that block's rest day.** Races are
+  fixed Sundays and the roster rotates past them, so a race can land on any day of an off
+  block — including the rest day, which it then replaces, and including day 2 off nights
+  (15 Nov 2026 does exactly that). The override preserves a Rest day it doesn't land on;
+  it cannot preserve one it does. Worth saying out loud when a race falls that way rather
+  than letting the rotation quietly drop to three rest days.
 
 `rosterAnchor` in settings is the first day of a nightshift block; everything derives from it.
 
