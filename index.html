@@ -170,9 +170,10 @@
 <div class="grid" id="loadGrid"></div>
 <div class="card readonly" id="volumeChartCard" style="margin:18px 20px 14px;">
   <div id="weeklyScoreRow" style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:12px;"></div>
-  <div class="card-label">Weekly Volume (hrs)</div>
-  <div class="card-note" style="margin-top:2px;">Bar height = hours ridden. Bar colour = how well that week's rides matched what was prescribed (green ≥80% (8/10) avg, amber ≥60% (6/10), red below).</div>
+  <div class="card-label">Weekly Volume (hrs) &amp; Load (TSS)</div>
+  <div class="card-note" style="margin-top:2px;">Bar height = hours ridden. Bar colour = how well that week's rides matched what was prescribed (green ≥80% (8/10) avg, amber ≥60% (6/10), red below). The small figure under each week is TSS per hour — how hard those hours were. Building volume right means that number holds or falls while the bars grow.</div>
   <div id="volumeChart" style="margin-top:10px;"></div>
+  <div id="loadDensityRow" style="margin-top:8px;"></div>
 </div>
 <div class="log" id="ridesLog"></div>
 
@@ -675,6 +676,29 @@ function weeklyVolumeTrend(){
   return { hrsThisWeek, rolling4wkAvg };
 }
 
+// ---- Training load (TSS) ----
+//
+// TSS = (seconds x NP x IF) / (FTP x 3600) x 100, with IF = NP/FTP. Computed here
+// rather than read from anywhere, because Strava's Relative Effort is heart-rate
+// derived and inherits every problem with the HR zones, while the apps' own TSS
+// figures are frozen against whatever FTP was set on the day the ride synced — the
+// 9 Nov ride still carries a TSS of 246 from an FTP that was ~236 at the time.
+// Recomputing from stored NP against the current FTP keeps the whole history on
+// one scale. Verified against Garmin/Strava for 11 Nov 2026: 6.0 + 28.1 + 66.2 =
+// 100.3, where both apps show 7 + 27 + 66 = 100.
+//
+// Prefers weighted_avg_watts (normalised power) and falls back to avg_watts, which
+// understates load on a variable ride but is better than dropping it.
+function rideTSS(r){
+  const ftp = Number(data.ftp);
+  if(!Number.isFinite(ftp) || ftp <= 0) return null;
+  const np = Number(r.weighted_avg_watts ?? r.avg_watts);
+  const secs = Number(r.moving_time_s);
+  if(!Number.isFinite(np) || np <= 0 || !Number.isFinite(secs) || secs <= 0) return null;
+  const intensity = np / ftp;
+  return (secs * np * intensity) / (ftp * 3600) * 100;
+}
+
 function weeklyVolumeSeries(weeks=8){
   const now = new Date(); now.setHours(0,0,0,0);
   const buckets = [];
@@ -691,26 +715,87 @@ function weeklyVolumeSeries(weeks=8){
     // (right effort type, duration, power for the day), not just whether hours were logged.
     const scores = weekRides.map(computeRideScore).filter(s => s!=null);
     const avgScore = scores.length ? scores.reduce((a,b)=>a+b,0)/scores.length : null;
-    buckets.push({ label: i===0 ? 'This wk' : `-${i}w`, hours: secs/3600, target, avgScore });
+
+    // Weekly load, and the density that matters more than either number alone:
+    // TSS per hour says what KIND of hours they were. Building volume correctly
+    // means hours rise while density stays flat or falls.
+    const tssValues = weekRides.map(rideTSS).filter(v => v!=null);
+    const tss = tssValues.length ? tssValues.reduce((a,b)=>a+b,0) : null;
+    const hours = secs/3600;
+    const tssPerHour = (tss!=null && hours > 0.25) ? tss/hours : null;
+
+    buckets.push({ label: i===0 ? 'This wk' : `-${i}w`, hours, target, avgScore, tss, tssPerHour });
   }
   return buckets;
 }
 
-function barChartSVG(series, height=100){
+// Bars are hours; the row of small figures under each is that week's TSS per hour.
+//
+// A TSS line was tried as an overlay and dropped: on a phone, eight weeks of bars
+// plus a second scaled series collides with the hour labels and reads as noise.
+// Density is the number that actually drives a decision and it fits in two digits,
+// so it goes under the bar where it can be scanned down the row.
+function barChartSVG(series, height=118){
   const max = Math.max(...series.map(s=>s.hours), 1);
   const barW = 100/series.length;
+  const base = height - 30;          // bars sit on this line; two label rows below
+  const barMax = base - 16;          // leaves room for the hours figure above a full bar
+
+  // Density is judged against this chart's own mean, so the colouring stays
+  // meaningful as fitness and habits move, rather than against a fixed number.
+  const densities = series.map(s=>s.tssPerHour).filter(v=>v!=null);
+  const meanDensity = densities.length
+    ? densities.reduce((a,b)=>a+b,0)/densities.length : null;
+
   const bars = series.map((s,i)=>{
-    const h = Math.max(2, (s.hours/max)*(height-34));
+    const h = Math.max(2, (s.hours/max)*barMax);
     const x = i*barW;
     // Bar colour reflects adherence to what was prescribed that week (avg per-ride score),
     // not volume — a week can be full of hours but still red if the sessions were the wrong type.
     const color = s.avgScore==null ? 'var(--muted)' : s.avgScore>=8 ? 'var(--green)' : s.avgScore>=6 ? 'var(--amber)' : 'var(--red)';
-    const labelY = Math.max(11, height-h-22);
-    return `<rect x="${x+barW*0.18}%" y="${height-h-16}" width="${barW*0.64}%" height="${h}" rx="3" fill="${color}" opacity="0.9"/>
-      <text x="${x+barW*0.5}%" y="${labelY}" font-size="9" fill="var(--text)" text-anchor="middle" font-family="JetBrains Mono, monospace">${s.hours.toFixed(1)}</text>
-      <text x="${x+barW*0.5}%" y="${height-2}" font-size="8" fill="var(--muted)" text-anchor="middle" font-family="JetBrains Mono, monospace">${s.label}</text>`;
+
+    let densityCell = '';
+    if(s.tssPerHour != null){
+      const d = s.tssPerHour;
+      const dColor = meanDensity==null ? 'var(--muted)'
+        : d > meanDensity+4 ? 'var(--red)'
+        : d > meanDensity+1.5 ? 'var(--amber)'
+        : d < meanDensity-1.5 ? 'var(--cyan)' : 'var(--muted)';
+      densityCell = `<text x="${x+barW*0.5}%" y="${height-2}" font-size="8" fill="${dColor}"
+        text-anchor="middle" font-family="JetBrains Mono, monospace">${Math.round(d)}</text>`;
+    }
+
+    return `<rect x="${x+barW*0.18}%" y="${base-h}" width="${barW*0.64}%" height="${h}" rx="3" fill="${color}" opacity="0.9"/>
+      <text x="${x+barW*0.5}%" y="${base-h-5}" font-size="9" fill="var(--text)" text-anchor="middle" font-family="JetBrains Mono, monospace">${s.hours.toFixed(1)}</text>
+      <text x="${x+barW*0.5}%" y="${height-14}" font-size="8" fill="var(--muted)" text-anchor="middle" font-family="JetBrains Mono, monospace">${s.label}</text>
+      ${densityCell}`;
   }).join('');
+
   return `<svg width="100%" height="${height}" viewBox="0 0 300 ${height}" preserveAspectRatio="none">${bars}</svg>`;
+}
+
+// The number to actually watch while building volume. Hours going up is fine;
+// hours going up while TSS/hr also goes up means intensity crept in with them.
+// Density ran 41-44 through Sep/Oct, then 53 and 51 in the two weeks before HRV
+// bottomed out — so a rising line here is an early warning, ahead of the ring.
+function loadDensitySummary(series){
+  const withDensity = series.filter(s => s.tssPerHour != null);
+  if(withDensity.length < 2) return '';
+  const cur = withDensity[withDensity.length-1];
+  const prior = withDensity.slice(0, -1);
+  const avg = prior.reduce((a,s)=>a+s.tssPerHour, 0) / prior.length;
+  const delta = cur.tssPerHour - avg;
+  const arrow = delta > 3 ? '▲' : delta < -3 ? '▼' : '▬';
+  // Rising density is the one worth flagging; falling density while hours build
+  // is exactly what the plan wants, so it reads neutral rather than good-or-bad.
+  const color = delta > 5 ? 'var(--red)' : delta > 3 ? 'var(--amber)' : 'var(--cyan)';
+  return `<div class="card-note" style="display:flex; justify-content:space-between; align-items:baseline; gap:10px;">
+      <span>Load density</span>
+      <span style="font-family:'JetBrains Mono',monospace; color:${color};">
+        ${arrow} ${Math.round(cur.tssPerHour)} TSS/hr
+        <span style="color:var(--muted);">vs ${Math.round(avg)} avg</span>
+      </span>
+    </div>`;
 }
 
 // ---- Ride vs. prescription auto-scoring ----
@@ -961,7 +1046,9 @@ function renderLoadAndRides(readinessInfo){
   document.getElementById('weeklyScoreRow').innerHTML =
     `<div><div class="card-label" style="margin-bottom:4px;">This Week</div><div class="card-num" style="font-size:22px;">${avgScoreLabel}</div></div>`;
 
-  document.getElementById('volumeChart').innerHTML = barChartSVG(weeklyVolumeSeries(8));
+  const volumeSeries = weeklyVolumeSeries(8);
+  document.getElementById('volumeChart').innerHTML = barChartSVG(volumeSeries);
+  document.getElementById('loadDensityRow').innerHTML = loadDensitySummary(volumeSeries);
 
   if(!recentRides.length){
     document.getElementById('ridesLog').innerHTML = `<div class="card-note" style="padding:14px;">No rides synced yet — waiting on the Vercel cron job's first pull from Strava.</div>`;
