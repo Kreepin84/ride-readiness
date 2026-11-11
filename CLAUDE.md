@@ -9,27 +9,126 @@ against a rotating shift roster.
 Numbers that shape nearly every answer about training. These are the measured values —
 prefer them over anything an app estimates.
 
-- **FTP 295–297W.** 297W is a real measured hour (5 Oct, outdoor, Fernleigh). Treat that as
-  the reference. Zwift and Garmin periodically offer a higher FTP off a short effort — those
-  are model extrapolations from the 5-minute end of the power curve, not threshold
-  measurements. Don't change zones on one.
-- **VT1 175W / ~120bpm**, **FatMax ~125W**, **VO2max ~60** (lab CPET, plus Garmin estimate).
-- **Weight 82.9kg** (20 Oct 2026). Zwift weight must be correct — a wrong value invalidates
-  a race result.
-- **Z2 target 150–175W** for long rides, not the full zone up to 221W. The top of Z2 sits on
-  VT1 and that band is already overloaded; low aerobic is the underfed one.
-- **The gap that matters:** FatMax (125W) sits well below where he trains. Long low-aerobic
-  volume is what drags it up. More hours at the wrong intensity is the recurring failure mode.
+- **FTP 328W**, **weight 82.2kg** → **3.99 W/kg** (11 Nov 2026). Garmin and Strava both
+  carry 328; the dashboard does now too. Evidence runs through a 297W measured hour (5 Oct),
+  a 308W measured hour in the 1 Nov CCCC crit, and the 8 Nov race. Three ride files on
+  11 Nov each back out an FTP of 325–330 from their Intensity Factor, which is an
+  independent confirmation.
+  - The standing rule still holds: Zwift and Garmin periodically offer a higher FTP off a
+    **short** effort, and those are model extrapolations from the 5-minute end of the power
+    curve, not threshold measurements. Don't change zones on one. A sustained hour is
+    different evidence and does justify a change.
+  - **The trainer does not read high.** The 1 Nov outdoor 20-min (335W) beat the 27 Oct
+    Zwift 20-min (326W) four days apart. If anything the Kickr reads low, so don't discount
+    indoor numbers against outdoor ones.
+  - Zwift weight must be correct — a wrong value invalidates a race result.
+- **VT1 is above 200W and probably above 225W. The old 175W / 120bpm is stale.** Measured
+  11 Nov on a locked ERG block: 200W held for 58 min at 124.8bpm average with **0.38%
+  Pw:HR decoupling**, and 225W for a further 34 min at 131.5bpm with ~1.5bpm of drift.
+  Neither is a rider working above their first threshold.
+  - **No VT1 number is established.** The test rules 175W out; it does not replace it.
+    That needs gas exchange or a longer step protocol with lactate.
+  - **VT2 is near 300–310W.** HR rose linearly at 2.71 bpm per 10W from 250–290W, then
+    departed the fit by +3.3 at 310W and +6.0 at 329W. The deflection HR (160–168) agrees
+    with the Garmin lactate-threshold HR of 168. Position is soft — the ramp used 1–2 min
+    steps, too short for HR to plateau, so every step HR is an underestimate.
+  - **Max HR is at least 177** (11 Nov, at 350W, and he stopped). True max is higher.
+    Anything computing zones off an *estimated* max is using a wrong number.
+  - **Cadence costs about 2 bpm from 85 to 92 rpm** at fixed power (r = +0.14). Real,
+    consistent, and too small to manage.
+- **FatMax ~125W, VO2max ~60** (lab CPET, plus Garmin estimate). These are measured and do
+  **not** scale with FTP — never recompute a band from a new FTP figure. **FatMax has not
+  been retested** and can't be seen in HR and power; don't infer it has moved because VT1 did.
+- **Two long-ride bands, because they do different jobs:**
+  - **Fat oxidation: 140–170W.** Deliberately below where it feels natural. Rationale is
+    FatMax at 125W sitting well below where he trains — but that rationale is an assumption
+    until FatMax is retested.
+  - **Aerobic volume and durability: 190–215W.** This is what 11 Nov actually demonstrated.
+    Riding 160W for those hours leaves aerobic stimulus on the table.
+- **Intensity distribution is fine — don't claim otherwise.** A previous note here said more
+  hours at the wrong intensity was the recurring failure mode. That was drawn from outdoor
+  rides only and is **wrong**: including Zwift, Strava puts him at ~81% Zone 1. Retracted.
+- **The actual recurring failure mode is rest.** 14 Sep – 11 Nov: rode 50 of 59 days, nine
+  full rest days, and one streak of **22 consecutive days** without a day off. Volume
+  averages 8.6 h/week (range 3.6–11.9), not the 4.6 h/week figure from August — that number
+  is long stale and shouldn't be quoted. When he asks about adding hours, check the recovery
+  trend first; the limiter has been rest days, not volume.
 - **Races A Grade crits** — outcomes turn on repeated 30s surges, not steady-state power.
   Micro-intervals (30/15s, 40/20s) target exactly that and are a current focus.
+- **Strong sprinter with a genuine kick.** All-time outdoor bests: **5s 1364W** (1325W in
+  2026), **15s 1213W**, **30s 952W**, **1min 666W** — about 16.6 / 14.8 / 11.6 / 8.1 W/kg at
+  82.2kg. Steep, high-peaking curve.
+  - **Don't profile him off the 1 Nov race** (5s 1095W, 15s 846W, 30s 829W, almost flat
+    between 15s and 30s). That was a **deliberate seated sprint he was trying out**, not how
+    he normally sprints — it cost roughly 370W at 15s against his standing best. A flat
+    15s/30s profile is the signature of sitting down, not of his physiology.
+  - He is **not** limited to break finishes. A bunch sprint off a good wheel suits him.
+    Finishes are lost to positioning, not sprint power.
+- **W/kg targets.** 4 W/kg is reached. 4.5 needs 370W at current weight or 349W at 77.5kg —
+  weight is the larger lever and the realistic next target. 5 W/kg means 411W or 65.6kg;
+  treat it as out of scope rather than a goal to plan around. The TrainerRoad figure he
+  quotes (11 h/week for 9–12 months) moves the odds of reaching 5 W/kg to about 1 in 16 —
+  that describes how rare 5 W/kg is, not a route to it.
+
+### Judging progress
+
+FTP is a noisy progress signal and is easily moved by one good twenty minutes. Prefer
+**heart rate cost at a fixed power**, computed off the repeated ~41km Fernleigh rides:
+
+- Pull the `watts`/`heart_rate` streams, keep only moving samples where the 30s window around
+  each point has `stdev < 0.45 × mean` (drops surges and coasting), smooth both channels by
+  30s to deal with HR lag, then regress HR against power.
+- Read off what a fixed wattage costs in beats. Jul → Oct 2026: 175W went 123 → 117bpm,
+  220W went 128 → 121bpm.
+- **Always compare at matched power.** Raw Efficiency Factor (power ÷ HR) rises with
+  intensity by itself, so a hard ride always "looks" more efficient than an easy one.
+- Aerobic decoupling **can** be measured, but only off a deliberate fixed-power block — the
+  Fernleigh rides aren't steady enough and several return negative drift simply because he
+  rode harder late. The 11 Nov ERG block is the template: lock ERG, hold one power for 45+
+  minutes, compare first half against second.
+- Resting HR can't be used for cross-period comparison: the Tasker/Galaxy Ring rows
+  (Jul–Sep) and the Oura rows (from 23 Oct) are different devices measuring differently.
+
+### Health signals
+
+These override training reads — see Tone at the bottom of this file.
+
+- **HRV has roughly halved and resting HR has risen** over the fortnight to 10 Nov: HRV 26 →
+  7–12ms, resting HR 59 → 70–76. Both markers moving together is the pattern that means
+  something.
+- **The absolute values are low and discordant with his fitness.** Overnight HRV in the
+  single digits and a resting HR in the 70s don't match a 328W FTP. Candidate causes split
+  into measurement (ring fit — he changed from middle to index finger on 11 Nov, which
+  resets the baseline; allow two weeks on one finger before reading the trend) and
+  everything else.
+- **Don't coach around the second group.** Raised haematocrit, a 137/87 BP reading, and
+  exogenous testosterone all independently raise resting HR and lower HRV. If the markers
+  stay low after a clean two weeks of measurement, that is a GP and bloods conversation, not
+  a training one. Outstanding: a 7-day morning BP log across both block types, and FBC +
+  iron studies + renal with cystatin C (morning, fasted, no pre-workout, no creatine for
+  2–4 weeks beforehand — creatine raises serum creatinine without any kidney change).
+- **Don't compare his HRV to anyone else's.** HRV metrics differ by device and algorithm
+  (RMSSD vs SDNN vs lnRMSSD, whole-night vs 5-minute windows), and absolute values are
+  largely genetic and decline with age. It is a within-person trend tool only.
 
 ## Roster
 
 Rotating **16-day cycle**: 4 nightshifts → 4 off → 4 dayshifts → 4 off. Haul truck operator
-(Liebherr T282), ~12h shifts, 5am starts on dayshift. Two consequences that keep coming up:
+(Liebherr T282), ~12h shifts, **6am starts on dayshift** (not 5am). Consequences that keep
+coming up:
 
+- **A ~4am session before a dayshift is feasible** and he does ride them. Don't refuse one on
+  scheduling grounds. But keep it **easy only**. Threshold and VO2 work at 4am is a bad test
+  and a bad stimulus: core temperature is at its circadian low, HR runs high for the power,
+  and he's fasted. Low aerobic is the one session type that doesn't care about any of that.
+- **The 4am rides and the low HRV are the same fact.** A 4am start means waking ~3:30, which
+  means 8h of sleep requires being asleep by 7:30pm. Dayshift nights run 5.5–6h against 7–9h
+  in the off blocks. If HRV and resting HR are drifting the wrong way mid-dayshift, that's
+  the cause — look there before concluding anything about fitness or FTP.
 - Hard sessions and races only fit in the off blocks. A late finish before an early shift is a
-  **safety** question, not just a training one.
+  **safety** question, not just a training one. The same applies in reverse on nights: a hard
+  session in the afternoon before a 12h overnight shift on the truck is a safety question,
+  whatever the training data says.
 - The first two days of the off block that follows nights are easy-only — the body is still
   catching up on sleep debt. This is encoded in `sessionForDate()`.
 
