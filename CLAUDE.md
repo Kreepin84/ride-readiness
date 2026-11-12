@@ -49,12 +49,35 @@ prefer them over anything an app estimates.
     That needs gas exchange or a longer step protocol with lactate.
   - **VT2 is near 300–310W.** HR rose linearly at 2.71 bpm per 10W from 250–290W, then
     departed the fit by +3.3 at 310W and +6.0 at 329W. The deflection HR (160–168) agrees
-    with the Garmin lactate-threshold HR of 168. Position is soft — the ramp used 1–2 min
-    steps, too short for HR to plateau, so every step HR is an underestimate.
+    with the Garmin lactate-threshold HR of 168.
+    - **The ramp protocol was +10W per KILOMETRE over the last 9.9km, not per minute.**
+      An earlier note here called every step "1–2 min, too short for HR to plateau" and
+      treated every step HR as an underestimate. That is only true of the lower half.
+      The ramp climbed (+1.37% mean against −0.13% for the rest of the ride) and the
+      gradient steepened to 2.8–3.5% from 310W up, which slowed him down and made the
+      steps at the top **longer**: 130s at 310W, 111s at 320W, 128s at 330W, against
+      86–103s below 300W. The three steps that define the deflection had the most
+      settling time, so **the 300–310W figure is firmer than "soft"** — still short of a
+      true 3-minute plateau, but not badly underestimated.
+    - Distance-based steps on a climb self-correct, because the harder it gets the longer
+      he spends there. For the retest, 1.5km steps on that same climb clear 3 minutes per
+      step at the top end.
   - **Max HR is at least 177** (11 Nov, at 350W, and he stopped). True max is higher.
     Anything computing zones off an *estimated* max is using a wrong number.
-  - **Cadence costs about 2 bpm from 85 to 92 rpm** at fixed power (r = +0.14). Real,
-    consistent, and too small to manage.
+  - **HR costs ~2.5 bpm per 10W and the relationship is close to linear across a wide
+    range.** 2.53 bpm/10W measured on a 175→190W step (12 Nov) against 2.71 bpm/10W over
+    250–290W (11 Nov) — two sessions 100W apart agreeing within 7%. Useful: his HR at any
+    power between 175 and 290W is predictable to a couple of beats.
+  - **Cadence costs about 4 bpm per 10 rpm** at fixed power — measured 12 Nov on 65 min
+    of locked 175W ERG while cadence drifted 73→95 rpm, fitting HR against cadence *and*
+    time together. Real, consistent, and still too small to manage: ride whatever cadence
+    feels right.
+    - **The raw correlation says 5.18 bpm/10rpm and is wrong.** Cadence rose with time and
+      so does HR, so a plain cadence-vs-HR fit credits cadence with ordinary drift —
+      about a quarter of the apparent effect. Always fit time alongside it.
+    - An earlier figure of ~2 bpm from 85→92 rpm (r = +0.14) came from a ride where
+      cadence spanned only 12 rpm. The 12 Nov measurement spans 22 rpm with power locked
+      to a 6W range and supersedes it.
 - **FatMax ~125W, VO2max ~60** (lab CPET, plus Garmin estimate). These are measured and do
   **not** scale with FTP — never recompute a band from a new FTP figure. **FatMax has not
   been retested** and can't be seen in HR and power; don't infer it has moved because VT1 did.
@@ -128,6 +151,16 @@ FTP is a noisy progress signal and is easily moved by one good twenty minutes. P
   Fernleigh rides aren't steady enough and several return negative drift simply because he
   rode harder late. The 11 Nov ERG block is the template: lock ERG, hold one power for 45+
   minutes, compare first half against second.
+- **Hold cadence steady as well as power, or the decoupling figure is meaningless.** The
+  method assumes power is the only thing changing. On 12 Nov, 65 min at a locked 175W
+  returned 2.27% decoupling — worse than the 0.38% from 46 min at a *higher* 200W on
+  11 Nov, which makes no sense until you notice cadence climbed 73→95 rpm through the
+  12 Nov ride. At ~4 bpm per 10 rpm that accounts for roughly half the HR rise; the real
+  figure was nearer 1%. The 11 Nov test was clean only because cadence happened to sit
+  near 88 throughout.
+  - So: a rising-cadence ride makes good aerobic work look like fading. Before calling a
+    decoupling number, check whether cadence moved. If it did, fit HR against cadence and
+    time together and report the time term, not the raw split.
 - Resting HR can't be used for cross-period comparison: the Tasker/Galaxy Ring rows
   (Jul–Sep) and the Oura rows (from 23 Oct) are different devices measuring differently.
 
