@@ -215,6 +215,26 @@ coming up:
 - The first two days of the off block that follows nights are easy-only — the body is still
   catching up on sleep debt. Encoded in `OFF_A_SESSIONS`, not as a special case in
   `sessionForDate()`.
+- **The plan is one build to a goal event, not repeating rotations.** `eventDate` (setting,
+  default Grafton to Inverell, Sat 13 Mar 2027 — unconfirmed until entries open) drives
+  `phaseForDate()`: base 85+ days out, build 36–84, event-specific 13–35, taper 0–12. Each
+  phase has its own `OFF_A_SESSIONS` / `OFF_B_SESSIONS` arrays; nightshift and dayshift
+  sessions don't change by phase (safety, not periodisation, sets those). The old six
+  16-day rotations from `rosterAnchor` ran out in October and sat on "Peak 6/6" forever.
+  - Hours and TSS targets now come from the day's actual prescription
+    (`parseDurationRangeFromText` midpoint, tier → intensity), not a fixed table, so they
+    follow the build and race weekends. `CAPACITY_BY_BLOCK` is only a fallback.
+  - **13 Mar 2027 falls on the last day of a nightshift block.** He needs leave for it, and
+    the dashboard has no event-day override yet.
+  - **Weekly CCCC racing and the event build compete, and Ryan chose "race when it fits"**
+    (20 Nov 2026). A race weekend uses the race day, the eve (openers) and the day after
+    (recovery). In build and event-specific phases, `raceFitsBuild()` drops any race whose
+    weekend would land on a protected slot — post-nights day 3 (long ride), post-dayshift
+    days 1–2 (long ride, climb/event sim) — and the race calendar shows it as "skip, long
+    ride day". Base and taper race freely. Simulated 20 Nov – 13 Mar: weekly racing gave
+    ~9.4 h/week with one climb sim and one event sim; race-when-it-fits gives ~10.6 h/week,
+    two climb sims and two event sims. A race on post-dayshift day 4 replaces that block's
+    rest day (27 Dec 2026 does).
 - **The two off blocks are not interchangeable and have separate session arrays.**
   `OFF_A_SESSIONS` (cyclePos 4–7, post-nights) is aerobic only and carries no quality
   session at all. `OFF_B_SESSIONS` (cyclePos 12–15, post-dayshift) is the freshest point in
@@ -236,11 +256,24 @@ coming up:
 
 ## Racing
 
-- **HEZ** (Newcastle Hunter CC) and **CCCC** (Central Coast CC) both race **fortnightly on
-  Sundays**. Neither is weekly, neither is Saturday.
-- Schedules are generated from an anchor date + 14-day interval (`hezAnchor`, `ccccAnchor` in
-  settings), not a hardcoded list. If a club's races land on the opposite Sunday to what the
-  dashboard shows, shift that anchor by 7 days.
+- **HEZ** (Newcastle Hunter CC) races **fortnightly on Sundays**. **CCCC** (Central Coast CC,
+  Ourimbah) runs its Spring/Summer series **weekly on Sundays** — he raced it on 1, 8, 15
+  and 22 Nov 2026. An earlier note here said both were fortnightly; that hid the 22 Nov race
+  from the dashboard entirely.
+- Schedules are generated from an anchor date + the club's interval (`hezAnchor`,
+  `ccccAnchor` in settings; `HEZ_INTERVAL_DAYS` 14, `CCCC_INTERVAL_DAYS` 7), not a hardcoded
+  list. If HEZ races land on the opposite Sunday to what the dashboard shows, shift that
+  anchor by 7 days.
+- **Race eve gets openers, from any block.** `sessionForDate()` checks whether tomorrow is a
+  raceable Sunday (one `findRaceSundayInBlock()` finds) and prescribes openers — 30–75 min
+  mostly easy with 3 x 1 min at 330–350W. It used to inherit the generic slot (a 2–2.5h Z2
+  ride, or "easy spin or rest" on the last dayshift day), which neither opens the legs nor
+  scores the openers he actually rode. Race day text carries the primer (3 x 2 min, last
+  block ~20 min before the gun) — the protocol is 2 for 2 against one unprimed race.
+- **Prescription wording drives scoring.** `tierForPrescription()` is a substring match:
+  any text containing "race" scores in the hard tier and "threshold" in the threshold tier,
+  even in a phrase like "no threshold work". Write non-race prescriptions with "racing" and
+  avoid naming intensities they're telling him to skip.
 - Entries go through EntryBoss (CCCC) and Buncheur (HEZ).
 
 ## Architecture
