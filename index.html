@@ -265,7 +265,7 @@ const NIGHT_SESSIONS = [
 const DAY_SESSIONS = [
   "Rest — no riding. First day back on shift with a 6am start.",
   "Easy spin, 60 min at 150–175W. A 4am session stays easy: core temp is at its low and you're fasted.",
-  "Z2 endurance, 60–75 min at 190–215W. Still easy — no threshold work at 4am.",
+  "Z2 endurance, 60–75 min at 190–215W. Still easy — nothing hard at 4am.",
   "Easy spin, 45–60 min at 150–175W, or rest heading into the off block."
 ];
 
@@ -315,12 +315,14 @@ const OFF_B_SESSIONS = {
 const TOTAL_ROTATIONS = 6;
 const ROTATION_DAYS = 16;
 
-// Both clubs race on SUNDAYS, fortnightly. Each schedule is an anchor date (a known race
-// Sunday) plus a 14-day interval, so the calendar keeps generating forward without needing a
-// hand-maintained list. Anchors are editable in Settings — if a club's races land on the
-// opposite Sunday to what the dashboard shows, shift that anchor by 7 days.
+// Both clubs race on SUNDAYS. HEZ is fortnightly; CCCC runs its Spring/Summer series
+// WEEKLY (he raced Ourimbah on 1, 8, 15 and 22 Nov 2026). Each schedule is an anchor date
+// (a known race Sunday) plus the club's interval, so the calendar keeps generating forward
+// without a hand-maintained list. Anchors are editable in Settings — if HEZ races land on
+// the opposite Sunday to what the dashboard shows, shift that anchor by 7 days.
 const RACE_DOW = 0;                 // 0 = Sunday
-const RACE_INTERVAL_DAYS = 14;      // fortnightly
+const HEZ_INTERVAL_DAYS = 14;       // fortnightly
+const CCCC_INTERVAL_DAYS = 7;       // weekly
 const HEZ_URL = 'https://buncheur.com/races?author=Newcastle+Hunter+CC&option_22=Race%2CBunch+Ride&option_23=Road%2CTrack';
 const CCCC_URL = 'https://entryboss.cc/calendar/centralcoast';
 
@@ -334,16 +336,16 @@ function dayDiff(a, b){
 }
 
 // Is this date a race day for the given club anchor? True when it falls on the club's race
-// weekday and sits a whole number of fortnights from the anchor.
-function isClubRaceDay(dateObj, anchorStr){
+// weekday and sits a whole number of intervals from the anchor.
+function isClubRaceDay(dateObj, anchorStr, intervalDays){
   if(!anchorStr) return false;
   if(dateObj.getDay() !== RACE_DOW) return false;
   const anchor = new Date(anchorStr+'T00:00:00');
   const diff = dayDiff(dateObj, anchor);
-  return ((diff % RACE_INTERVAL_DAYS) + RACE_INTERVAL_DAYS) % RACE_INTERVAL_DAYS === 0;
+  return ((diff % intervalDays) + intervalDays) % intervalDays === 0;
 }
-function isHezDay(dateObj){ return isClubRaceDay(dateObj, data.hezAnchor); }
-function isCcccDay(dateObj){ return isClubRaceDay(dateObj, data.ccccAnchor); }
+function isHezDay(dateObj){ return isClubRaceDay(dateObj, data.hezAnchor, HEZ_INTERVAL_DAYS); }
+function isCcccDay(dateObj){ return isClubRaceDay(dateObj, data.ccccAnchor, CCCC_INTERVAL_DAYS); }
 
 function phaseForRotation(rotation){ if(rotation<=2) return 'base'; if(rotation<=4) return 'build'; return 'peak'; }
 function programRotation(dateObj){
@@ -353,8 +355,8 @@ function programRotation(dateObj){
   return Math.min(Math.max(rot,1), TOTAL_ROTATIONS);
 }
 
-// Race Sundays that fall in an Off Block are treated as race days — both HEZ and CCCC run
-// fortnightly on Sundays, so the *actual* planned session on those Sundays is racing, not
+// Race Sundays that fall in an Off Block are treated as race days — HEZ (fortnightly) and
+// CCCC (weekly) both race on Sundays, so the *actual* planned session on those Sundays is racing, not
 // whatever the generic rotation slot would otherwise prescribe. Without this override, a full-gas
 // race gets auto-scored against a mismatched "recovery spin" band and comes out looking terrible
 // even when the ride itself was excellent.
@@ -396,10 +398,10 @@ function sessionForDate(dateObj){
       if(key===raceKey){
         const hez = isHezDay(raceSun), cccc = isCcccDay(raceSun);
         text = (hez && cccc)
-          ? 'Race day — HEZ + CCCC racing, 60–100 min, full gas.'
+          ? 'Race day — HEZ + CCCC racing, 60–100 min, full gas. Primer 3 x 2 min, last block ~20 min before the gun.'
           : cccc
-            ? 'Race day — CCCC racing, 45–90 min, full gas.'
-            : 'Race day — HEZ racing, 45–90 min, full gas.';
+            ? 'Race day — CCCC racing, 45–90 min, full gas. Primer 3 x 2 min, last block ~20 min before the gun.'
+            : 'Race day — HEZ racing, 45–90 min, full gas. Primer 3 x 2 min, last block ~20 min before the gun.';
         isHard = true;
       } else if(key===dayAfterKey){
         text = 'Z1 recovery spin, 45–60 min at 150–175W. Very easy legs only after racing.';
@@ -408,12 +410,29 @@ function sessionForDate(dateObj){
         // A race weekend reshapes the block, but it must not eat the block's rest
         // day — that was the whole point of the 11 Nov plan. Only the riding days
         // get rewritten; a Rest day stays a Rest day.
-        text = 'Z2 endurance, 2–2.5 hrs at 190–215W. Steady aerobic around the weekend race.';
+        text = 'Z2 endurance, 2–2.5 hrs at 190–215W. Steady aerobic around the weekend\u2019s racing.';
         isHard = false;
       } else {
         isHard = false;
       }
     }
+  }
+
+  // The day before a race gets openers, whatever block today sits in. Races are Sundays and
+  // the roster rotates past them, so the eve is often the last day of a dayshift block (a
+  // pre-shift session) or a day of the off block itself. Without this, the eve inherited
+  // the generic slot — a 2–2.5h Z2 ride or "easy spin or rest" — neither of which opens
+  // the legs. Only races the roster can actually ride count: the race Sunday must sit in an
+  // off block, which is what findRaceSundayInBlock() checks.
+  //
+  // Wording matters for scoring: tierForPrescription() maps any text containing "race" to
+  // the hard tier, so this text says "racing", never "race", and scores in the easy tier —
+  // which is right, openers are ~95% easy riding by time.
+  const tomorrow = new Date(dateObj); tomorrow.setDate(tomorrow.getDate()+1);
+  const raceTomorrow = findRaceSundayInBlock(tomorrow);
+  if(raceTomorrow && localKey(raceTomorrow)===localKey(tomorrow)){
+    text = 'Openers, 30–75 min mostly easy at 150–175W with 3 x 1 min at 330–350W. Day before racing — sharpen, don\u2019t train. Use the 32-min version before a shift.';
+    isHard = false;
   }
 
   return {
@@ -1136,7 +1155,7 @@ function renderRaceCalendar(){
     shown++;
   }
   if(!shown) html += `<div class="card-note" style="padding:6px 2px 0;">No race Sundays found — check the HEZ and CCCC anchor dates in Settings.</div>`;
-  html += `<div class="card-note" style="padding:6px 2px 0;">Tap a row to open the entry page. HEZ and CCCC both race fortnightly on Sundays.</div>`;
+  html += `<div class="card-note" style="padding:6px 2px 0;">Tap a row to open the entry page. CCCC races weekly and HEZ fortnightly, both on Sundays.</div>`;
   document.getElementById('raceLog').innerHTML = html;
 }
 
@@ -1378,7 +1397,7 @@ const FIELD_SETS = {
     {key:'weight', label:'Weight (kg)', val:()=>data.weight, type:'number'},
     {key:'rosterAnchor', label:'First day of a nightshift block (YYYY-MM-DD)', val:()=>data.rosterAnchor, type:'text'},
     {key:'hezAnchor', label:'A known HEZ race Sunday (YYYY-MM-DD) — fortnightly from here', val:()=>data.hezAnchor, type:'text'},
-    {key:'ccccAnchor', label:'A known CCCC race Sunday (YYYY-MM-DD) — fortnightly from here', val:()=>data.ccccAnchor, type:'text'},
+    {key:'ccccAnchor', label:'A known CCCC race Sunday (YYYY-MM-DD) — weekly from here', val:()=>data.ccccAnchor, type:'text'},
     {key:'hrExcellent', label:'Overnight HR that scores 100 (fully recovered)', val:()=>data.hrExcellent, type:'number'},
     {key:'hrPoor', label:'Overnight HR that scores 0 (poor recovery)', val:()=>data.hrPoor, type:'number'},
     {key:'weeklyLoadTarget', label:'7-day Relative Effort sum = "full tunnel" (100%)', val:()=>data.weeklyLoadTarget, type:'number'},

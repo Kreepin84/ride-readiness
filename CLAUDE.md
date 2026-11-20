@@ -236,11 +236,24 @@ coming up:
 
 ## Racing
 
-- **HEZ** (Newcastle Hunter CC) and **CCCC** (Central Coast CC) both race **fortnightly on
-  Sundays**. Neither is weekly, neither is Saturday.
-- Schedules are generated from an anchor date + 14-day interval (`hezAnchor`, `ccccAnchor` in
-  settings), not a hardcoded list. If a club's races land on the opposite Sunday to what the
-  dashboard shows, shift that anchor by 7 days.
+- **HEZ** (Newcastle Hunter CC) races **fortnightly on Sundays**. **CCCC** (Central Coast CC,
+  Ourimbah) runs its Spring/Summer series **weekly on Sundays** — he raced it on 1, 8, 15
+  and 22 Nov 2026. An earlier note here said both were fortnightly; that hid the 22 Nov race
+  from the dashboard entirely.
+- Schedules are generated from an anchor date + the club's interval (`hezAnchor`,
+  `ccccAnchor` in settings; `HEZ_INTERVAL_DAYS` 14, `CCCC_INTERVAL_DAYS` 7), not a hardcoded
+  list. If HEZ races land on the opposite Sunday to what the dashboard shows, shift that
+  anchor by 7 days.
+- **Race eve gets openers, from any block.** `sessionForDate()` checks whether tomorrow is a
+  raceable Sunday (one `findRaceSundayInBlock()` finds) and prescribes openers — 30–75 min
+  mostly easy with 3 x 1 min at 330–350W. It used to inherit the generic slot (a 2–2.5h Z2
+  ride, or "easy spin or rest" on the last dayshift day), which neither opens the legs nor
+  scores the openers he actually rode. Race day text carries the primer (3 x 2 min, last
+  block ~20 min before the gun) — the protocol is 2 for 2 against one unprimed race.
+- **Prescription wording drives scoring.** `tierForPrescription()` is a substring match:
+  any text containing "race" scores in the hard tier and "threshold" in the threshold tier,
+  even in a phrase like "no threshold work". Write non-race prescriptions with "racing" and
+  avoid naming intensities they're telling him to skip.
 - Entries go through EntryBoss (CCCC) and Buncheur (HEZ).
 
 ## Architecture
