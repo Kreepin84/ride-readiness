@@ -226,10 +226,15 @@ coming up:
     follow the build and race weekends. `CAPACITY_BY_BLOCK` is only a fallback.
   - **13 Mar 2027 falls on the last day of a nightshift block.** He needs leave for it, and
     the dashboard has no event-day override yet.
-  - **Weekly CCCC racing and the event build compete.** With a race most Sundays, a race
-    weekend uses three of an off block's four days (openers, race, recovery) and often
-    lands on the long ride. Simulated 20 Nov – 13 Mar: ~9.4 h/week, one climb sim, one
-    event sim. That is a choice for Ryan to make, not something to paper over in code.
+  - **Weekly CCCC racing and the event build compete, and Ryan chose "race when it fits"**
+    (20 Nov 2026). A race weekend uses the race day, the eve (openers) and the day after
+    (recovery). In build and event-specific phases, `raceFitsBuild()` drops any race whose
+    weekend would land on a protected slot — post-nights day 3 (long ride), post-dayshift
+    days 1–2 (long ride, climb/event sim) — and the race calendar shows it as "skip, long
+    ride day". Base and taper race freely. Simulated 20 Nov – 13 Mar: weekly racing gave
+    ~9.4 h/week with one climb sim and one event sim; race-when-it-fits gives ~10.6 h/week,
+    two climb sims and two event sims. A race on post-dayshift day 4 replaces that block's
+    rest day (27 Dec 2026 does).
 - **The two off blocks are not interchangeable and have separate session arrays.**
   `OFF_A_SESSIONS` (cyclePos 4–7, post-nights) is aerobic only and carries no quality
   session at all. `OFF_B_SESSIONS` (cyclePos 12–15, post-dayshift) is the freshest point in

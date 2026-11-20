@@ -486,9 +486,29 @@ function findRaceSundayInBlock(dateObj){
   const blockStart = new Date(dateObj); blockStart.setDate(blockStart.getDate() - (cyclePos - blockStartOffset));
   for(let i=0;i<4;i++){
     const d = new Date(blockStart); d.setDate(d.getDate()+i);
-    if(d.getDay()===RACE_DOW && (isHezDay(d) || isCcccDay(d))) return d;
+    if(d.getDay()===RACE_DOW && (isHezDay(d) || isCcccDay(d))) return raceFitsBuild(d) ? d : null;
   }
   return null;
+}
+
+// "Race when it fits" (Ryan's call, 20 Nov 2026). In the build and event-specific phases the
+// event sessions come first: a race weekend uses the race day, the day before (openers)
+// and the day after (recovery), and if any of those lands on a protected slot the race is
+// skipped and the block runs as planned. Protected slots are the event-critical ones:
+//   off block after nights (cyclePos 4–7):   day 3, the long ride
+//   off block after dayshift (cyclePos 12–15): day 1 long ride, day 2 climb/event sim
+// In practice that leaves races on day 1 of the post-nights block or day 4 of the
+// post-dayshift block (which costs that block's rest day). Base and taper race freely.
+const PROTECTED_RACE_SLOTS = { A:[2], B:[0,1] };
+function raceFitsBuild(raceSun){
+  const phase = phaseForDate(raceSun);
+  if(phase !== 'build' && phase !== 'specific') return true;
+  const anchor = new Date(data.rosterAnchor+'T00:00:00');
+  const cyclePos = ((dayDiff(raceSun, anchor) % 16)+16) % 16;
+  const which = cyclePos>=12 ? 'B' : 'A';
+  const idx = cyclePos % 4;
+  const used = [idx-1, idx, idx+1];
+  return !used.some(i => PROTECTED_RACE_SLOTS[which].includes(i));
 }
 
 // Hours the plan actually asks for on each day of the rotation, taken from the
@@ -1180,9 +1200,11 @@ function renderRaceCalendar(){
     const who = (hez && cccc) ? 'HEZ + CCCC' : cccc ? 'CCCC' : 'HEZ';
     const url = cccc ? CCCC_URL : HEZ_URL;
     let label, color, href;
-    if(isOff){ label=`${who} available`; color='var(--cyan)'; href=url; }
+    const fits = isOff && raceFitsBuild(d);
+    if(fits){ label=`${who} available`; color='var(--cyan)'; href=url; }
+    else if(isOff){ label=`${who} on — skip, long ride day`; color='var(--amber)'; href=url; }
     else { label=`${who} on — but working`; color='var(--red)'; href=url; }
-    const clickAttr = `onclick="window.open('${href}','_blank')" style="cursor:pointer;${isOff?'border-color:var(--amber);':''}"`;
+    const clickAttr = `onclick="window.open('${href}','_blank')" style="cursor:pointer;${fits?'border-color:var(--amber);':''}"`;
     html += `<div class="log-row" ${clickAttr}><span>${dayStr}</span><span class="n" style="color:${color}">${label} →</span></div>`;
     shown++;
   }
