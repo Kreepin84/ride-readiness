@@ -223,6 +223,7 @@ const DEFAULTS = {
   rosterAnchor: '2026-07-05',
   hezAnchor: '2026-11-01',
   ccccAnchor: '2026-11-15',
+  eventDate: '2027-03-13',
   hrExcellent: 48,
   hrPoor: 68,
   weeklyLoadTarget: 300,
@@ -277,43 +278,76 @@ const DAY_SESSIONS = [
 // "first two days easy" rule is encoded in the text here rather than special-cased in
 // sessionForDate().
 const OFF_A_SESSIONS = {
-  base:  ["Easy Z1–Z2 only, 75–90 min at 150–175W — still catching up on sleep debt from nights.",
-          "Easy endurance, 2.5–3 hrs at 190–215W. Long but easy, no efforts — day 2 off nights.",
-          "Long aerobic, 3.5–4 hrs at 190–215W. Steady, no surges.",
-          "Rest — full day off the bike."],
-  build: ["Easy Z1–Z2 only, 75–90 min at 150–175W — still catching up on sleep debt from nights.",
-          "Easy endurance, 2.5–3 hrs at 190–215W. Long but easy, no efforts — day 2 off nights.",
-          "Long aerobic, 3.5–4 hrs at 190–215W, with 4–6 x 30s surges in the last hour only.",
-          "Rest — full day off the bike."],
-  peak:  ["Easy Z1–Z2 only, 75–90 min at 150–175W — still catching up on sleep debt from nights.",
-          "Easy endurance, 2–2.5 hrs at 190–215W. Long but easy, no efforts — day 2 off nights.",
-          "Long aerobic, 3–3.5 hrs at 190–215W, with 4–6 x 30s surges in the last hour only.",
-          "Rest — full day off the bike."]
+  base:     ["Easy Z1–Z2 only, 75–90 min at 150–175W — still catching up on sleep debt from nights.",
+             "Easy endurance, 2.5–3 hrs at 190–215W. Long but easy, no efforts — day 2 off nights.",
+             "Long aerobic, 4–4.5 hrs at 190–215W. Fuel 60–70g carbs/hr and practise it every hour.",
+             "Rest — full day off the bike."],
+  build:    ["Easy Z1–Z2 only, 75–90 min at 150–175W — still catching up on sleep debt from nights.",
+             "Easy endurance, 2.5–3 hrs at 190–215W. Long but easy, no efforts — day 2 off nights.",
+             "Long aerobic, 5–5.5 hrs at 190–215W. Durability: hold 200W in the last hour. 70–80g carbs/hr.",
+             "Rest — full day off the bike."],
+  specific: ["Easy Z1–Z2 only, 75–90 min at 150–175W — still catching up on sleep debt from nights.",
+             "Easy endurance, 2.5–3 hrs at 190–215W. Long but easy, no efforts — day 2 off nights.",
+             "Long aerobic, 5.5–6 hrs at 190–215W, 150–180km. Full event fuelling, 80–90g carbs/hr.",
+             "Rest — full day off the bike."],
+  taper:    ["Easy Z1–Z2 only, 60–75 min at 150–175W.",
+             "Easy endurance, 2–2.5 hrs at 190–215W.",
+             "Z2 endurance, 2–2.5 hrs at 190–215W with 3 x 5 min at 270–290W. Legs ticking over, nothing deep.",
+             "Rest — full day off the bike."]
 };
 
 // OFF_B follows dayshift and is the freshest block in the rotation, so it carries the
 // rotation's one quality session plus the biggest aerobic rides. On a race weekend
 // findRaceSundayInBlock() replaces these anyway.
 const OFF_B_SESSIONS = {
-  base:  ["Long aerobic, 4–4.5 hrs at 190–215W. Biggest ride of the rotation, no surges.",
-          "Threshold: 2 x 20min at 300–315W, 5min recovery. ~90 min total.",
-          "Z2 endurance, 3–3.5 hrs at 190–215W.",
-          "Rest — full day off the bike."],
-  build: ["Long aerobic, 4–4.5 hrs at 190–215W, with 4–6 x 5min at 300–315W in the back half.",
-          "Micro-intervals: 3 x (13 x 30/15s) at 380–420W — the crit-specific session.",
-          "Z2 endurance, 3–3.5 hrs at 190–215W.",
-          "Rest — full day off the bike."],
-  peak:  ["Long aerobic, 3–3.5 hrs at 190–215W, race-pace efforts only in the last hour.",
-          "Micro-intervals: 3 x (13 x 30/15s) at 380–420W, or full-gas race simulation.",
-          "Z2 endurance, 2.5–3 hrs at 190–215W.",
-          "Rest — full day off the bike."]
+  base:     ["Long aerobic, 4.5–5 hrs at 190–215W. Biggest ride of the rotation. 60–70g carbs/hr.",
+             "Sweet spot, just under threshold: 2 x 20 min at 285–300W, 5 min spinning between, 2 hrs total. The rotation's one hard day.",
+             "Z2 endurance, 3–3.5 hrs at 190–215W.",
+             "Rest — full day off the bike."],
+  build:    ["Long aerobic, 4.5–5 hrs at 190–215W. 70–80g carbs/hr.",
+             "Climb sim, 3.5–4 hrs: 2–2.5 hrs at 190–215W, then 60–75 min at 270–290W (Gibraltar pace). 80–90g carbs/hr.",
+             "Easy Z1–Z2 only, 60–90 min at 150–175W. Legs back after the climb sim.",
+             "Rest — full day off the bike."],
+  specific: ["Z2 endurance, 3–3.5 hrs at 190–215W.",
+             "Event sim, 5.5–6.5 hrs, 180–200km: 75 min at 270–290W after 2.5 hrs, then hold 200W to the end. 80–90g carbs/hr.",
+             "Easy Z1–Z2 only, 60–90 min at 150–175W. Legs back after the event sim.",
+             "Rest — full day off the bike."],
+  taper:    ["Z2 endurance, 2–2.5 hrs at 190–215W.",
+             "Openers, 60–90 min mostly easy at 150–175W with 3 x 3 min at 280–300W. Sharp, not tired.",
+             "Easy Z1–Z2 only, 45–60 min at 150–175W.",
+             "Rest — full day off the bike."]
 };
 
-// Full 16-day roster rotations (nightshift + off + dayshift + off) that make up the
-// periodized plan, replacing the old fixed 12-calendar-week structure. Base -> Build -> Peak,
-// 2 rotations per phase by default.
-const TOTAL_ROTATIONS = 6;
+// The plan is ONE build to the goal event (eventDate, default Grafton to Inverell, Sat
+// 13 Mar 2027 — confirm the date when entries open), not repeating Base/Build/Peak
+// rotations. Phase comes from days remaining, so the plan re-times itself if the date
+// moves. It used to be six 16-day rotations from rosterAnchor, which ran out in October and
+// then sat on "Peak (rotation 6/6)" indefinitely.
+//
+//   base      85+ days out   long rides 4–5h, sweet spot as the hard day
+//   build     36–84          long rides to 5.5h, climb sim (60–75 min at Gibraltar pace)
+//   specific  13–35          150–200km rides at event fuelling, event sim
+//   taper     0–12           volume down, short efforts only
 const ROTATION_DAYS = 16;
+const PHASE_LABELS = { base:'Base', build:'Build', specific:'Event-specific', taper:'Taper' };
+function eventDateObj(){ return new Date((data.eventDate || DEFAULTS.eventDate)+'T00:00:00'); }
+function daysToEvent(dateObj){ return dayDiff(eventDateObj(), dateObj); }
+function phaseForDate(dateObj){
+  const d = daysToEvent(dateObj);
+  if(d < 0) return 'base';          // after the event the plan falls back to base
+  if(d <= 12) return 'taper';
+  if(d <= 35) return 'specific';
+  if(d <= 84) return 'build';
+  return 'base';
+}
+function phaseLabelFor(dateObj){
+  const d = daysToEvent(dateObj);
+  const phase = PHASE_LABELS[phaseForDate(dateObj)];
+  if(d < 0) return phase;
+  if(d === 0) return 'Event day';
+  const wks = Math.ceil(d/7);
+  return `${phase} · ${wks} wk${wks===1?'':'s'} to Grafton–Inverell`;
+}
 
 // Both clubs race on SUNDAYS. HEZ is fortnightly; CCCC runs its Spring/Summer series
 // WEEKLY (he raced Ourimbah on 1, 8, 15 and 22 Nov 2026). Each schedule is an anchor date
@@ -347,14 +381,6 @@ function isClubRaceDay(dateObj, anchorStr, intervalDays){
 function isHezDay(dateObj){ return isClubRaceDay(dateObj, data.hezAnchor, HEZ_INTERVAL_DAYS); }
 function isCcccDay(dateObj){ return isClubRaceDay(dateObj, data.ccccAnchor, CCCC_INTERVAL_DAYS); }
 
-function phaseForRotation(rotation){ if(rotation<=2) return 'base'; if(rotation<=4) return 'build'; return 'peak'; }
-function programRotation(dateObj){
-  const anchor = new Date(data.rosterAnchor+'T00:00:00');
-  const days = dayDiff(dateObj, anchor);
-  const rot = Math.floor(Math.max(days,0)/ROTATION_DAYS)+1;
-  return Math.min(Math.max(rot,1), TOTAL_ROTATIONS);
-}
-
 // Race Sundays that fall in an Off Block are treated as race days — HEZ (fortnightly) and
 // CCCC (weekly) both race on Sundays, so the *actual* planned session on those Sundays is racing, not
 // whatever the generic rotation slot would otherwise prescribe. Without this override, a full-gas
@@ -364,8 +390,7 @@ function sessionForDate(dateObj){
   const anchor = new Date(data.rosterAnchor+'T00:00:00');
   const diffDays = dayDiff(dateObj, anchor);
   const cyclePos = ((diffDays % 16)+16) % 16;
-  const rotation = programRotation(dateObj);
-  const phase = phaseForRotation(rotation);
+  const phase = phaseForDate(dateObj);
   let block, idx, text;
   // The two off blocks are NOT interchangeable and have separate session arrays.
   // cyclePos 4-7 always follows the nightshift block, so it is aerobic only and its
@@ -406,13 +431,12 @@ function sessionForDate(dateObj){
       } else if(key===dayAfterKey){
         text = 'Z1 recovery spin, 45–60 min at 150–175W. Very easy legs only after racing.';
         isHard = false;
-      } else if(!/^Rest —/.test(text)){
-        // A race weekend reshapes the block, but it must not eat the block's rest
-        // day — that was the whole point of the 11 Nov plan. Only the riding days
-        // get rewritten; a Rest day stays a Rest day.
-        text = 'Z2 endurance, 2–2.5 hrs at 190–215W. Steady aerobic around the weekend\u2019s racing.';
-        isHard = false;
-      } else {
+      } else if(isHard){
+        // The racing is this block's hard session — one per rotation, so the planned
+        // quality day steps down to aerobic. Everything else keeps its slot: with CCCC
+        // weekly, most off blocks hold a race, and rewriting every riding day around it
+        // (as this used to) deleted the long rides the event build depends on.
+        text = 'Z2 endurance, 3–3.5 hrs at 190–215W. The weekend\u2019s racing is this block\u2019s hard day.';
         isHard = false;
       }
     }
@@ -437,7 +461,7 @@ function sessionForDate(dateObj){
 
   return {
     block, dayLabel:dayLabels[idx], text,
-    phaseLabel: phase.charAt(0).toUpperCase()+phase.slice(1)+ ' (rotation '+rotation+'/'+TOTAL_ROTATIONS+')',
+    phaseLabel: phaseLabelFor(dateObj),
     isHard
   };
 }
@@ -513,7 +537,14 @@ function blockKeyFor(dateObj){
   };
 }
 
+// Hours come from the day's actual prescription (midpoint of its duration range), so the
+// weekly target follows the event build and race weekends instead of a fixed table.
+// CAPACITY_BY_BLOCK is only the fallback for a prescription with no parseable duration.
 function dailyCapacityHours(dateObj){
+  const text = sessionForDate(dateObj).text;
+  if(/^Rest —/.test(text)) return 0;
+  const range = parseDurationRangeFromText(text);
+  if(range) return Math.round(((range[0]+range[1])/2/60)*100)/100;
   const { key, idx } = blockKeyFor(dateObj);
   const hrs = CAPACITY_BY_BLOCK[key][idx];
   return hrs == null ? 0 : hrs;
@@ -527,8 +558,9 @@ function dailyCapacityTSS(dateObj){
   const hrs = dailyCapacityHours(dateObj);
   const ftp = Number(data.ftp);
   if(!hrs || !Number.isFinite(ftp) || ftp <= 0) return 0;
-  const { key, idx } = blockKeyFor(dateObj);
-  const watts = INTENSITY_WATTS[INTENSITY_BY_BLOCK[key][idx]];
+  // Intensity follows the prescription's scoring tier, for the same reason hours do.
+  const TIER_TO_INTENSITY = { easy:'easy', z2:'aerobic', threshold:'quality', hard:'race' };
+  const watts = INTENSITY_WATTS[TIER_TO_INTENSITY[tierForPrescription(sessionForDate(dateObj).text)]];
   if(watts == null) return 0;
   const intensity = watts / ftp;
   return intensity * intensity * hrs * 100;
@@ -1380,7 +1412,7 @@ function render(){
     <div class="log-row"><span>Next FTP test</span><span class="n" style="color:${dueColor}">${nextDue.toISOString().slice(0,10)} (${dueLabel})</span></div>
     <div class="log-row"><span>VO2max estimate</span><span class="n">${data.vo2max}</span></div>
     <div class="log-row"><span>Weight</span><span class="n">${data.weight} kg</span></div>
-    <div class="log-row"><span>Program rotation</span><span class="n">${programRotation(new Date())}/${TOTAL_ROTATIONS}</span></div>
+    <div class="log-row"><span>Goal event</span><span class="n">${data.eventDate} · ${phaseLabelFor(new Date())}</span></div>
     <div class="log-row"><span>Readiness HR range</span><span class="n">${data.hrExcellent}–${data.hrPoor} bpm</span></div>
     <div class="log-row"><span>Weekly load target</span><span class="n">${data.weeklyLoadTarget} effort pts</span></div>
     <div class="edit-btn" onclick="openModal('standing','Standing Numbers')">Update FTP / VO2max / Weight / Roster Anchor / Readiness Tuning</div>
@@ -1398,6 +1430,7 @@ const FIELD_SETS = {
     {key:'rosterAnchor', label:'First day of a nightshift block (YYYY-MM-DD)', val:()=>data.rosterAnchor, type:'text'},
     {key:'hezAnchor', label:'A known HEZ race Sunday (YYYY-MM-DD) — fortnightly from here', val:()=>data.hezAnchor, type:'text'},
     {key:'ccccAnchor', label:'A known CCCC race Sunday (YYYY-MM-DD) — weekly from here', val:()=>data.ccccAnchor, type:'text'},
+    {key:'eventDate', label:'Goal event date — Grafton to Inverell (YYYY-MM-DD)', val:()=>data.eventDate, type:'text'},
     {key:'hrExcellent', label:'Overnight HR that scores 100 (fully recovered)', val:()=>data.hrExcellent, type:'number'},
     {key:'hrPoor', label:'Overnight HR that scores 0 (poor recovery)', val:()=>data.hrPoor, type:'number'},
     {key:'weeklyLoadTarget', label:'7-day Relative Effort sum = "full tunnel" (100%)', val:()=>data.weeklyLoadTarget, type:'number'},

@@ -215,6 +215,21 @@ coming up:
 - The first two days of the off block that follows nights are easy-only — the body is still
   catching up on sleep debt. Encoded in `OFF_A_SESSIONS`, not as a special case in
   `sessionForDate()`.
+- **The plan is one build to a goal event, not repeating rotations.** `eventDate` (setting,
+  default Grafton to Inverell, Sat 13 Mar 2027 — unconfirmed until entries open) drives
+  `phaseForDate()`: base 85+ days out, build 36–84, event-specific 13–35, taper 0–12. Each
+  phase has its own `OFF_A_SESSIONS` / `OFF_B_SESSIONS` arrays; nightshift and dayshift
+  sessions don't change by phase (safety, not periodisation, sets those). The old six
+  16-day rotations from `rosterAnchor` ran out in October and sat on "Peak 6/6" forever.
+  - Hours and TSS targets now come from the day's actual prescription
+    (`parseDurationRangeFromText` midpoint, tier → intensity), not a fixed table, so they
+    follow the build and race weekends. `CAPACITY_BY_BLOCK` is only a fallback.
+  - **13 Mar 2027 falls on the last day of a nightshift block.** He needs leave for it, and
+    the dashboard has no event-day override yet.
+  - **Weekly CCCC racing and the event build compete.** With a race most Sundays, a race
+    weekend uses three of an off block's four days (openers, race, recovery) and often
+    lands on the long ride. Simulated 20 Nov – 13 Mar: ~9.4 h/week, one climb sim, one
+    event sim. That is a choice for Ryan to make, not something to paper over in code.
 - **The two off blocks are not interchangeable and have separate session arrays.**
   `OFF_A_SESSIONS` (cyclePos 4–7, post-nights) is aerobic only and carries no quality
   session at all. `OFF_B_SESSIONS` (cyclePos 12–15, post-dayshift) is the freshest point in

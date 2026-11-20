@@ -3,7 +3,7 @@
 
 const ALLOWED_KEYS = [
   'torqueEff', 'ftp', 'vo2max', 'weight', 'rosterAnchor', 'programStart',
-  'hezAnchor', 'ccccAnchor',
+  'hezAnchor', 'ccccAnchor', 'eventDate',
   'hrExcellent', 'hrPoor', 'weeklyLoadTarget', 'weeklyHoursTarget', 'ftpTestDate', 'ftpTestIntervalWeeks',
   'lastUpdated'
 ];
@@ -12,10 +12,10 @@ const ALLOWED_KEYS = [
 // Listing them here (rather than inline in the check) keeps the two lists from drifting apart,
 // which is what silently rejected the race-anchor saves when they were first added.
 const NON_NUMERIC_KEYS = new Set([
-  'rosterAnchor', 'programStart', 'hezAnchor', 'ccccAnchor', 'ftpTestDate', 'lastUpdated'
+  'rosterAnchor', 'programStart', 'hezAnchor', 'ccccAnchor', 'eventDate', 'ftpTestDate', 'lastUpdated'
 ]);
 const DATE_KEYS = new Set([
-  'rosterAnchor', 'programStart', 'hezAnchor', 'ccccAnchor', 'ftpTestDate'
+  'rosterAnchor', 'programStart', 'hezAnchor', 'ccccAnchor', 'eventDate', 'ftpTestDate'
 ]);
 
 // Basic in-memory rate limit: max 20 requests per IP per 60s.
