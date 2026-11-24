@@ -335,10 +335,12 @@ anything the sync writes. Oura rows add `hrv_ms`, `resting_hr` (overnight low, p
 
 ### Readiness score
 
-Weighted from sleep 30%, HRV 20%, resting HR 20%, training load 30%. Components with no data
+Weighted from sleep 35%, HRV 10%, resting HR 20%, training load 35% (HRV cut from 20% on
+24 Nov — it swings 7–33 nightly with the roster and was moving the dial too much). Components with no data
 drop out and their weight is redistributed, so a missing ring loses precision rather than
 quietly scoring a neutral 60. HRV is scored against a rolling 14-night median baseline, not
-an absolute value — below 75% of baseline caps readiness at 45, and under 5h sleep caps it
+an absolute value — **three consecutive nights** below 75% of baseline cap readiness at 45
+(`hrvLowRun()`; a single low night only costs points through the HRV score), and under 5h sleep caps it
 at 50. With no recovery data at all the score is capped at 70, because load alone would
 otherwise read 100.
 

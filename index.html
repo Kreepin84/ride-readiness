@@ -753,7 +753,32 @@ function weeklyRelativeEffort(){
 // Any component without data drops out and its weight is redistributed across
 // the rest, so a missing ring degrades the score's precision instead of
 // silently scoring 60 and dragging the whole dial toward the middle.
-const READINESS_WEIGHTS = { sleep: 0.30, hrv: 0.20, hr: 0.20, load: 0.30 };
+//
+// HRV dropped from 20% to 10% (24 Nov 2026). His nightly HRV swings 7–33 with
+// the roster, ring fit is still a live confound, and one low night was moving
+// the dial more than it deserved. The share went to sleep and load, which he
+// can act on. A sustained run of low nights still caps readiness — see below.
+const READINESS_WEIGHTS = { sleep: 0.35, hrv: 0.10, hr: 0.20, load: 0.35 };
+
+// Consecutive recent nights with HRV below 75% of the baseline that preceded
+// them. A single low night is noise; three in a row (5–9 Nov was five) is the
+// pattern worth acting on. Only nights from the last few days count, so an old
+// low run can't keep capping today's score after a gap in the data.
+const HRV_LOW_RUN_NIGHTS = 3;
+function hrvLowRun(){
+  const today = new Date(); today.setHours(0,0,0,0);
+  const withHrv = sleepHistory
+    .map((r,i) => ({ r, i }))
+    .filter(x => x.r.hrv_ms != null && Number(x.r.hrv_ms) > 0);
+  let run = 0;
+  for(const { r, i } of withHrv){
+    if(dayDiff(today, new Date(r.log_date+'T00:00:00')) > HRV_LOW_RUN_NIGHTS + 1) break;
+    const base = hrvMedianOver(i+1, i+15, 5);
+    if(base == null || Number(r.hrv_ms) >= base * 0.75) break;
+    run++;
+  }
+  return run;
+}
 
 function computeReadiness(){
   const sleepHrs = latestSleep && latestSleep.sleep_duration_ms ? latestSleep.sleep_duration_ms/3600000 : null;
@@ -807,9 +832,13 @@ function computeReadiness(){
   if(sleepHrs!=null && sleepHrs < 5){
     readiness = Math.min(readiness, 50); capped = true; capReason = 'under 5h sleep';
   }
-  if(hrvPctOfBaseline!=null && hrvPctOfBaseline < 75){
+  // Capped only on a sustained run. One low night already costs points through
+  // the HRV score; it no longer overrides everything else on its own.
+  const lowRun = hrvLowRun();
+  if(lowRun >= HRV_LOW_RUN_NIGHTS){
     readiness = Math.min(readiness, 45); capped = true;
-    capReason = capReason ? capReason + ', HRV well below baseline' : 'HRV well below baseline';
+    const why = `HRV well below baseline ${lowRun} nights running`;
+    capReason = capReason ? capReason + ', ' + why : why;
   }
   // A weeks-long slide is a different signal from one bad night, and the daily
   // comparison above goes blind to it as the baseline follows it down.
@@ -828,6 +857,7 @@ function computeReadiness(){
     weeklyEffort,
     sleepHrs, overnightHr, hrv, hrvBaseline: baseline,
     hrvPctOfBaseline: hrvPctOfBaseline!=null ? Math.round(hrvPctOfBaseline) : null,
+    hrvLowRun: lowRun,
     hrvDrift: drift,
     tempDeviation: latestSleep && latestSleep.temp_deviation_c != null ? Number(latestSleep.temp_deviation_c) : null,
     hasData: parts.length > 0 && latestSleep != null,
