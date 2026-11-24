@@ -497,10 +497,21 @@ function findRaceSundayInBlock(dateObj){
 // skipped and the block runs as planned. Protected slots are the event-critical ones:
 //   off block after nights (cyclePos 4–7):   day 3, the long ride
 //   off block after dayshift (cyclePos 12–15): day 1 long ride, day 2 climb/event sim
-// In practice that leaves races on day 1 of the post-nights block or day 4 of the
-// post-dayshift block (which costs that block's rest day). Base and taper race freely.
+// In practice that leaves races on day 4 of the post-dayshift block (which costs that
+// block's rest day). Base and taper race freely, except on post-nights day 1 (see below).
 const PROTECTED_RACE_SLOTS = { A:[2], B:[0,1] };
 function raceFitsBuild(raceSun){
+  const anchor0 = new Date(data.rosterAnchor+'T00:00:00');
+  const pos = ((dayDiff(raceSun, anchor0) % 16)+16) % 16;
+  // Never the first day of the post-nights block, in any phase. That morning he is
+  // coming off the fourth 12h nightshift (ends ~6am at Muswellbrook) — a race at
+  // 8:30 means driving to Ourimbah unslept and racing in a bunch. Safety, not
+  // periodisation. 17 Jan 2027 is the first Sunday this would otherwise allow.
+  if(pos === 4) return false;
+  // No racing in the week after the event: past eventDate phaseForDate() falls back
+  // to base, which would otherwise put a crit the day after a 228km race.
+  const sinceEvent = -daysToEvent(raceSun);
+  if(sinceEvent >= 1 && sinceEvent <= 7) return false;
   const phase = phaseForDate(raceSun);
   if(phase !== 'build' && phase !== 'specific') return true;
   const anchor = new Date(data.rosterAnchor+'T00:00:00');

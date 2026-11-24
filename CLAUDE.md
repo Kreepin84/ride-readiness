@@ -224,14 +224,21 @@ coming up:
   - Hours and TSS targets now come from the day's actual prescription
     (`parseDurationRangeFromText` midpoint, tier → intensity), not a fixed table, so they
     follow the build and race weekends. `CAPACITY_BY_BLOCK` is only a fallback.
-  - **13 Mar 2027 falls on the last day of a nightshift block.** He needs leave for it, and
-    the dashboard has no event-day override yet.
+  - **13 Mar 2027 falls on the last day of a dayshift block** (Google Calendar: dayshift
+    10–13 Mar; an earlier note here said nightshift). He needs leave for it, and the dashboard
+    has no event-day override yet. Nor is there a post-event plan: 14 Mar prescribes a 5h ride.
+  - **Podiatrist surgery is booked for 26 Feb 2027** (follow-up 1 Mar) — the post-dayshift
+    block that holds the event sim, two weeks out. The plan doesn't know about it.
+  - **No race on post-nights day 1 (cyclePos 4), any phase.** He finishes the fourth
+    nightshift ~6am that morning. `raceFitsBuild()` rejects it; 17 Jan 2027 is the case.
+  - Raceable Sundays to the event (as of 24 Nov): 27 Dec (HEZ + CCCC), 7 Mar (HEZ + CCCC).
+    Everything else is on shift, protected for the build, or post-nightshift.
   - **Weekly CCCC racing and the event build compete, and Ryan chose "race when it fits"**
     (20 Nov 2026). A race weekend uses the race day, the eve (openers) and the day after
     (recovery). In build and event-specific phases, `raceFitsBuild()` drops any race whose
     weekend would land on a protected slot — post-nights day 3 (long ride), post-dayshift
     days 1–2 (long ride, climb/event sim) — and the race calendar shows it as "skip, long
-    ride day". Base and taper race freely. Simulated 20 Nov – 13 Mar: weekly racing gave
+    ride day". Base and taper race freely. Simulated 20 Nov – 13 Mar (before the post-nightshift rule): weekly racing gave
     ~9.4 h/week with one climb sim and one event sim; race-when-it-fits gives ~10.6 h/week,
     two climb sims and two event sims. A race on post-dayshift day 4 replaces that block's
     rest day (27 Dec 2026 does).
