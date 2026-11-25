@@ -41,12 +41,17 @@ prefer them over anything an app estimates.
     own, say so plainly and stop: the weight lost is the glycogen a crit runs on, and with
     a raised haematocrit, deliberate dehydration concentrates an already-elevated red cell
     mass. This one overrides any performance argument.
-- **VT1 is above 200W and probably above 225W. The old 175W / 120bpm is stale.** Measured
+- **VT1 is around 195–210W (26 Nov talk test). The old 175W / 120bpm is stale.** Measured
   11 Nov on a locked ERG block: 200W held for 58 min at 124.8bpm average with **0.38%
   Pw:HR decoupling**, and 225W for a further 34 min at 131.5bpm with ~1.5bpm of drift.
   Neither is a rider working above their first threshold.
   - **No VT1 number is established.** The test rules 175W out; it does not replace it.
     That needs gas exchange or a longer step protocol with lactate.
+  - **26 Nov talk test (Zwift ERG, 5-min steps, cadence held ~88):** step-end HR roughly
+    165W 112, 180W 114, 195W 118, 210W 122, 225W 126 — linear, no kink, as expected.
+    Talk test: full sentences easy to 180W; at 195W he could talk ~15s but needed a big
+    breath after; at 225W only ~9s. Best combined estimate **VT1 ≈ 195–210W, HR ~118–122**,
+    which fits the clean 0.38% decoupling at 200W. "Probably above 225W" is not supported.
   - **VT2 is near 300–310W.** HR rose linearly at 2.71 bpm per 10W from 250–290W, then
     departed the fit by +3.3 at 310W and +6.0 at 329W. The deflection HR (160–168) agrees
     with the Garmin lactate-threshold HR of 168.
