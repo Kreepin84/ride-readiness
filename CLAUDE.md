@@ -86,11 +86,16 @@ prefer them over anything an app estimates.
 - **FatMax ~125W, VO2max ~60** (lab CPET, plus Garmin estimate). These are measured and do
   **not** scale with FTP — never recompute a band from a new FTP figure. **FatMax has not
   been retested** and can't be seen in HR and power; don't infer it has moved because VT1 did.
+- **Long rides sit below VT1 by default (27 Nov).** All aerobic prescriptions moved from
+  190–215W to **180–200W**; 200–215W is kept for the last hour of build long rides and event
+  pacing. Rationale: VT1 ≈ 195–210W, and riding the low end of the zone cuts fatigue and
+  recovery cost for the same aerobic stimulus (his own observation from a pro coach's podcast).
 - **Two long-ride bands, because they do different jobs:**
   - **Fat oxidation: 140–170W.** Deliberately below where it feels natural. Rationale is
     FatMax at 125W sitting well below where he trains — but that rationale is an assumption
     until FatMax is retested.
-  - **Aerobic volume and durability: 190–215W.** This is what 11 Nov actually demonstrated.
+  - **Aerobic volume and durability: 180–200W, 200–215W for the last hour.** 11 Nov showed 200W
+    is sustainable cleanly.
     Riding 160W for those hours leaves aerobic stimulus on the table.
 - **Intensity distribution is fine — don't claim otherwise.** A previous note here said more
   hours at the wrong intensity was the recurring failure mode. That was drawn from outdoor
@@ -230,8 +235,15 @@ coming up:
     (`parseDurationRangeFromText` midpoint, tier → intensity), not a fixed table, so they
     follow the build and race weekends. `CAPACITY_BY_BLOCK` is only a fallback.
   - **13 Mar 2027 falls on the last day of a dayshift block** (Google Calendar: dayshift
-    10–13 Mar; an earlier note here said nightshift). He needs leave for it, and the dashboard
-    has no event-day override yet. Nor is there a post-event plan: 14 Mar prescribes a 5h ride.
+    10–13 Mar; an earlier note here said nightshift). He needs leave for it. Event days and the eve now override
+    the session; 14–20 Mar is a recovery week.
+  - **Second goal event: Go4Bathurst, Sat 17 Apr 2027 (crit, Mount Panorama pit precinct)
+    and Sun 18 Apr (150km road race), setting `event2Date`.** Both days fall on post-dayshift
+    off-block days 3–4, no leave needed. `goalEvents()` lists events in order; the phase counts
+    down to the next one, the 7 days after any event are a `recovery` phase (no club racing,
+    its own OFF_A/OFF_B arrays), and event days plus their eve (openers) override
+    `sessionForDate()`. G2I → Go4Bathurst is 35 days: one recovery week, then specific, then taper.
+    Registration TBC on AusCycling.
   - **Podiatrist surgery is booked for 26 Feb 2027** (follow-up 1 Mar) — the post-dayshift
     block that holds the event sim, two weeks out. The plan doesn't know about it.
   - **No race on post-nights day 1 (cyclePos 4), any phase.** He finishes the fourth

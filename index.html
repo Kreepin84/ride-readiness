@@ -224,6 +224,7 @@ const DEFAULTS = {
   hezAnchor: '2026-11-01',
   ccccAnchor: '2026-11-15',
   eventDate: '2027-03-13',
+  event2Date: '2027-04-17',
   hrExcellent: 48,
   hrPoor: 68,
   weeklyLoadTarget: 300,
@@ -259,14 +260,14 @@ let rideRatings = {};
 // (brackets critical power of 315), VO2 345-390W.
 const NIGHT_SESSIONS = [
   "Easy spin, 60–75 min at 150–175W. Body's still adjusting — nothing above easy.",
-  "Z2 endurance, 90 min at 190–215W. Easy only — you're on shift tonight.",
+  "Z2 endurance, 90 min at 180–200W. Easy only — you're on shift tonight.",
   "Easy spin, 60–75 min at 150–175W. Drop it if the day's sleep was poor.",
   "Rest — no riding. Final night, prioritise sleep going into the off block."
 ];
 const DAY_SESSIONS = [
   "Rest — no riding. First day back on shift with a 6am start.",
   "Easy spin, 60 min at 150–175W. A 4am session stays easy: core temp is at its low and you're fasted.",
-  "Z2 endurance, 60–75 min at 190–215W. Still easy — nothing hard at 4am.",
+  "Z2 endurance, 60–75 min at 180–200W. Still easy — nothing hard at 4am.",
   "Easy spin, 45–60 min at 150–175W, or rest heading into the off block."
 ];
 
@@ -279,20 +280,24 @@ const DAY_SESSIONS = [
 // sessionForDate().
 const OFF_A_SESSIONS = {
   base:     ["Easy Z1–Z2 only, 75–90 min at 150–175W — still catching up on sleep debt from nights.",
-             "Easy endurance, 2.5–3 hrs at 190–215W. Long but easy, no efforts — day 2 off nights.",
-             "Long aerobic, 4–4.5 hrs at 190–215W. Fuel 60–70g carbs/hr and practise it every hour.",
+             "Easy endurance, 2.5–3 hrs at 180–200W. Long but easy, no efforts — day 2 off nights.",
+             "Long aerobic, 4–4.5 hrs at 180–200W. Fuel 60–70g carbs/hr and practise it every hour.",
              "Rest — full day off the bike."],
   build:    ["Easy Z1–Z2 only, 75–90 min at 150–175W — still catching up on sleep debt from nights.",
-             "Easy endurance, 2.5–3 hrs at 190–215W. Long but easy, no efforts — day 2 off nights.",
-             "Long aerobic, 5–5.5 hrs at 190–215W. Durability: hold 200W in the last hour. 70–80g carbs/hr.",
+             "Easy endurance, 2.5–3 hrs at 180–200W. Long but easy, no efforts — day 2 off nights.",
+             "Long aerobic, 5–5.5 hrs at 180–200W. Durability: last hour at 200–215W. 70–80g carbs/hr.",
              "Rest — full day off the bike."],
   specific: ["Easy Z1–Z2 only, 75–90 min at 150–175W — still catching up on sleep debt from nights.",
-             "Easy endurance, 2.5–3 hrs at 190–215W. Long but easy, no efforts — day 2 off nights.",
-             "Long aerobic, 5.5–6 hrs at 190–215W, 150–180km. Full event fuelling, 80–90g carbs/hr.",
+             "Easy endurance, 2.5–3 hrs at 180–200W. Long but easy, no efforts — day 2 off nights.",
+             "Long aerobic, 5.5–6 hrs at 180–200W, 150–180km. Full event fuelling, 80–90g carbs/hr.",
              "Rest — full day off the bike."],
   taper:    ["Easy Z1–Z2 only, 60–75 min at 150–175W.",
-             "Easy endurance, 2–2.5 hrs at 190–215W.",
-             "Z2 endurance, 2–2.5 hrs at 190–215W with 3 x 5 min at 270–290W. Legs ticking over, nothing deep.",
+             "Easy endurance, 2–2.5 hrs at 180–200W.",
+             "Z2 endurance, 2–2.5 hrs at 180–200W with 3 x 5 min at 270–290W. Legs ticking over, nothing deep.",
+             "Rest — full day off the bike."],
+  recovery: ["Rest — full day off the bike. Event week recovery.",
+             "Easy Z1 only, 45–60 min at 140–160W. Legs only.",
+             "Easy Z1–Z2 only, 60–90 min at 150–175W.",
              "Rest — full day off the bike."]
 };
 
@@ -300,21 +305,25 @@ const OFF_A_SESSIONS = {
 // rotation's one quality session plus the biggest aerobic rides. On a race weekend
 // findRaceSundayInBlock() replaces these anyway.
 const OFF_B_SESSIONS = {
-  base:     ["Long aerobic, 4.5–5 hrs at 190–215W. Biggest ride of the rotation. 60–70g carbs/hr.",
+  base:     ["Long aerobic, 4.5–5 hrs at 180–200W. Biggest ride of the rotation. 60–70g carbs/hr.",
              "Sweet spot, just under threshold: 2 x 20 min at 285–300W, 5 min spinning between, 2 hrs total. The rotation's one hard day.",
-             "Z2 endurance, 3–3.5 hrs at 190–215W.",
+             "Z2 endurance, 3–3.5 hrs at 180–200W.",
              "Rest — full day off the bike."],
-  build:    ["Long aerobic, 4.5–5 hrs at 190–215W. 70–80g carbs/hr.",
-             "Climb sim, 3.5–4 hrs: 2–2.5 hrs at 190–215W, then 60–75 min at 270–290W (Gibraltar pace). 80–90g carbs/hr.",
+  build:    ["Long aerobic, 4.5–5 hrs at 180–200W. 70–80g carbs/hr.",
+             "Climb sim, 3.5–4 hrs: 2–2.5 hrs at 180–200W, then 60–75 min at 270–290W (Gibraltar pace). 80–90g carbs/hr.",
              "Easy Z1–Z2 only, 60–90 min at 150–175W. Legs back after the climb sim.",
              "Rest — full day off the bike."],
-  specific: ["Z2 endurance, 3–3.5 hrs at 190–215W.",
+  specific: ["Z2 endurance, 3–3.5 hrs at 180–200W.",
              "Event sim, 5.5–6.5 hrs, 180–200km: 75 min at 270–290W after 2.5 hrs, then hold 200W to the end. 80–90g carbs/hr.",
              "Easy Z1–Z2 only, 60–90 min at 150–175W. Legs back after the event sim.",
              "Rest — full day off the bike."],
-  taper:    ["Z2 endurance, 2–2.5 hrs at 190–215W.",
+  taper:    ["Z2 endurance, 2–2.5 hrs at 180–200W.",
              "Openers, 60–90 min mostly easy at 150–175W with 3 x 3 min at 280–300W. Sharp, not tired.",
              "Easy Z1–Z2 only, 45–60 min at 150–175W.",
+             "Rest — full day off the bike."],
+  recovery: ["Rest — full day off the bike. Event week recovery.",
+             "Easy Z1 only, 45–60 min at 140–160W. Legs only.",
+             "Easy Z1–Z2 only, 60–90 min at 150–175W.",
              "Rest — full day off the bike."]
 };
 
@@ -329,24 +338,65 @@ const OFF_B_SESSIONS = {
 //   specific  13–35          150–200km rides at event fuelling, event sim
 //   taper     0–12           volume down, short efforts only
 const ROTATION_DAYS = 16;
-const PHASE_LABELS = { base:'Base', build:'Build', specific:'Event-specific', taper:'Taper' };
-function eventDateObj(){ return new Date((data.eventDate || DEFAULTS.eventDate)+'T00:00:00'); }
-function daysToEvent(dateObj){ return dayDiff(eventDateObj(), dateObj); }
+const PHASE_LABELS = { base:'Base', build:'Build', specific:'Event-specific', taper:'Taper', recovery:'Recovery' };
+
+// Goal events in order. Grafton to Inverell (13 Mar 2027) then Go4Bathurst (Sat 17 Apr
+// crit at Mount Panorama, Sun 18 Apr 150km road race), added 27 Nov 2026. The phase always
+// counts down to the NEXT event; the 7 days after any event are recovery. G2I to Go4Bathurst
+// is 35 days, so after recovery the plan lands straight in event-specific, then taper.
+const EVENT_RECOVERY_DAYS = 7;
+function goalEvents(){
+  return [
+    { key:'eventDate',  name:'Grafton–Inverell', date:(data.eventDate  || DEFAULTS.eventDate),  days:1,
+      text:['Grafton to Inverell, 228km. Event day: pace the climbs at 270–290W, everything else 180–200W, 80–90g carbs/hr from the start.'] },
+    { key:'event2Date', name:'Go4Bathurst',      date:(data.event2Date || DEFAULTS.event2Date), days:2,
+      text:['Go4Bathurst criterium, Mount Panorama pit precinct. Race day — primer 3 x 2 min, last block ~20 min before the gun.',
+            'Go4Bathurst 150km road race over Mount Panorama. Race day — fuel 80–90g carbs/hr from the start.'] }
+  ].map(e => ({ ...e, obj: new Date(e.date+'T00:00:00') }))
+   .sort((a,b) => a.obj - b.obj);
+}
+// The event a date is counting down to (first whose last day is today or later).
+function nextEventFor(dateObj){
+  return goalEvents().find(e => dayDiff(e.obj, dateObj) + (e.days-1) >= 0) || null;
+}
+function eventDateObj(dateObj){ const e = nextEventFor(dateObj || new Date()); return e ? e.obj : null; }
+function daysToEvent(dateObj){ const e = nextEventFor(dateObj); return e ? dayDiff(e.obj, dateObj) : -Infinity; }
+// Days since the most recent finished event (1 = the day after its last day), or null.
+function daysSinceLastEvent(dateObj){
+  let best = null;
+  for(const e of goalEvents()){
+    const since = dayDiff(dateObj, e.obj) - (e.days-1);
+    if(since >= 1 && (best === null || since < best)) best = since;
+  }
+  return best;
+}
+// If dateObj is an event day, returns { event, dayIdx }.
+function eventDayFor(dateObj){
+  for(const e of goalEvents()){
+    const i = dayDiff(dateObj, e.obj);
+    if(i >= 0 && i < e.days) return { event:e, dayIdx:i };
+  }
+  return null;
+}
 function phaseForDate(dateObj){
+  const since = daysSinceLastEvent(dateObj);
+  if(since !== null && since <= EVENT_RECOVERY_DAYS) return 'recovery';
   const d = daysToEvent(dateObj);
-  if(d < 0) return 'base';          // after the event the plan falls back to base
+  if(d === -Infinity) return 'base';   // no goal event left: hold base
   if(d <= 12) return 'taper';
   if(d <= 35) return 'specific';
   if(d <= 84) return 'build';
   return 'base';
 }
 function phaseLabelFor(dateObj){
-  const d = daysToEvent(dateObj);
+  const ev = eventDayFor(dateObj);
+  if(ev) return `Event day · ${ev.event.name}`;
   const phase = PHASE_LABELS[phaseForDate(dateObj)];
-  if(d < 0) return phase;
-  if(d === 0) return 'Event day';
+  const e = nextEventFor(dateObj);
+  if(!e) return phase;
+  const d = dayDiff(e.obj, dateObj);
   const wks = Math.ceil(d/7);
-  return `${phase} · ${wks} wk${wks===1?'':'s'} to Grafton–Inverell`;
+  return `${phase} · ${wks} wk${wks===1?'':'s'} to ${e.name}`;
 }
 
 // Both clubs race on SUNDAYS. HEZ is fortnightly; CCCC runs its Spring/Summer series
@@ -436,7 +486,7 @@ function sessionForDate(dateObj){
         // quality day steps down to aerobic. Everything else keeps its slot: with CCCC
         // weekly, most off blocks hold a race, and rewriting every riding day around it
         // (as this used to) deleted the long rides the event build depends on.
-        text = 'Z2 endurance, 3–3.5 hrs at 190–215W. The weekend\u2019s racing is this block\u2019s hard day.';
+        text = 'Z2 endurance, 3–3.5 hrs at 180–200W. The weekend\u2019s racing is this block\u2019s hard day.';
         isHard = false;
       }
     }
@@ -457,6 +507,19 @@ function sessionForDate(dateObj){
   if(raceTomorrow && localKey(raceTomorrow)===localKey(tomorrow)){
     text = 'Openers, 30–75 min mostly easy at 150–175W with 3 x 1 min at 330–350W. Day before racing — sharpen, don\u2019t train. Use the 32-min version before a shift.';
     isHard = false;
+  }
+
+  // Goal event days override everything, and the day before gets openers.
+  const ev = eventDayFor(dateObj);
+  if(ev){
+    text = ev.event.text[ev.dayIdx] || ev.event.text[0];
+    isHard = true;
+  } else {
+    const evTomorrow = eventDayFor(tomorrow);
+    if(evTomorrow && evTomorrow.dayIdx === 0){
+      text = `Openers, 30–60 min mostly easy at 150–175W with 3 x 1 min at 330–350W. ${evTomorrow.event.name} tomorrow — sharpen, don\u2019t train.`;
+      isHard = false;
+    }
   }
 
   return {
@@ -508,10 +571,8 @@ function raceFitsBuild(raceSun){
   // 8:30 means driving to Ourimbah unslept and racing in a bunch. Safety, not
   // periodisation. 17 Jan 2027 is the first Sunday this would otherwise allow.
   if(pos === 4) return false;
-  // No racing in the week after the event: past eventDate phaseForDate() falls back
-  // to base, which would otherwise put a crit the day after a 228km race.
-  const sinceEvent = -daysToEvent(raceSun);
-  if(sinceEvent >= 1 && sinceEvent <= 7) return false;
+  // No club racing in the recovery week after a goal event.
+  if(phaseForDate(raceSun) === 'recovery') return false;
   const phase = phaseForDate(raceSun);
   if(phase !== 'build' && phase !== 'specific') return true;
   const anchor = new Date(data.rosterAnchor+'T00:00:00');
@@ -554,7 +615,7 @@ const INTENSITY_BY_BLOCK = {
 // moves — CLAUDE.md is explicit about never recomputing them from a new FTP. Dividing
 // by the current FTP at read time means the load target falls as FTP rises, which is
 // correct: the same ride is a smaller fraction of a bigger engine.
-const INTENSITY_WATTS = { easy: 162, aerobic: 202, quality: 307, race: 330 };
+const INTENSITY_WATTS = { easy: 162, aerobic: 190, quality: 307, race: 330 };
 
 function blockKeyFor(dateObj){
   const anchor = new Date(data.rosterAnchor+'T00:00:00');
@@ -1475,7 +1536,7 @@ function render(){
     <div class="log-row"><span>Next FTP test</span><span class="n" style="color:${dueColor}">${nextDue.toISOString().slice(0,10)} (${dueLabel})</span></div>
     <div class="log-row"><span>VO2max estimate</span><span class="n">${data.vo2max}</span></div>
     <div class="log-row"><span>Weight</span><span class="n">${data.weight} kg</span></div>
-    <div class="log-row"><span>Goal event</span><span class="n">${data.eventDate} · ${phaseLabelFor(new Date())}</span></div>
+    <div class="log-row"><span>Goal event</span><span class="n">${(nextEventFor(new Date())||{date:'—'}).date} · ${phaseLabelFor(new Date())}</span></div>
     <div class="log-row"><span>Readiness HR range</span><span class="n">${data.hrExcellent}–${data.hrPoor} bpm</span></div>
     <div class="log-row"><span>Weekly load target</span><span class="n">${data.weeklyLoadTarget} effort pts</span></div>
     <div class="edit-btn" onclick="openModal('standing','Standing Numbers')">Update FTP / VO2max / Weight / Roster Anchor / Readiness Tuning</div>
@@ -1494,6 +1555,7 @@ const FIELD_SETS = {
     {key:'hezAnchor', label:'A known HEZ race Sunday (YYYY-MM-DD) — fortnightly from here', val:()=>data.hezAnchor, type:'text'},
     {key:'ccccAnchor', label:'A known CCCC race Sunday (YYYY-MM-DD) — weekly from here', val:()=>data.ccccAnchor, type:'text'},
     {key:'eventDate', label:'Goal event date — Grafton to Inverell (YYYY-MM-DD)', val:()=>data.eventDate, type:'text'},
+    {key:'event2Date', label:'Second goal event — Go4Bathurst, first day (YYYY-MM-DD)', val:()=>data.event2Date, type:'text'},
     {key:'hrExcellent', label:'Overnight HR that scores 100 (fully recovered)', val:()=>data.hrExcellent, type:'number'},
     {key:'hrPoor', label:'Overnight HR that scores 0 (poor recovery)', val:()=>data.hrPoor, type:'number'},
     {key:'weeklyLoadTarget', label:'7-day Relative Effort sum = "full tunnel" (100%)', val:()=>data.weeklyLoadTarget, type:'number'},
