@@ -41,12 +41,17 @@ prefer them over anything an app estimates.
     own, say so plainly and stop: the weight lost is the glycogen a crit runs on, and with
     a raised haematocrit, deliberate dehydration concentrates an already-elevated red cell
     mass. This one overrides any performance argument.
-- **VT1 is above 200W and probably above 225W. The old 175W / 120bpm is stale.** Measured
+- **VT1 is around 195–210W (26 Nov talk test). The old 175W / 120bpm is stale.** Measured
   11 Nov on a locked ERG block: 200W held for 58 min at 124.8bpm average with **0.38%
   Pw:HR decoupling**, and 225W for a further 34 min at 131.5bpm with ~1.5bpm of drift.
   Neither is a rider working above their first threshold.
   - **No VT1 number is established.** The test rules 175W out; it does not replace it.
     That needs gas exchange or a longer step protocol with lactate.
+  - **26 Nov talk test (Zwift ERG, 5-min steps, cadence held ~88):** step-end HR roughly
+    165W 112, 180W 114, 195W 118, 210W 122, 225W 126 — linear, no kink, as expected.
+    Talk test: full sentences easy to 180W; at 195W he could talk ~15s but needed a big
+    breath after; at 225W only ~9s. Best combined estimate **VT1 ≈ 195–210W, HR ~118–122**,
+    which fits the clean 0.38% decoupling at 200W. "Probably above 225W" is not supported.
   - **VT2 is near 300–310W.** HR rose linearly at 2.71 bpm per 10W from 250–290W, then
     departed the fit by +3.3 at 310W and +6.0 at 329W. The deflection HR (160–168) agrees
     with the Garmin lactate-threshold HR of 168.
@@ -81,11 +86,16 @@ prefer them over anything an app estimates.
 - **FatMax ~125W, VO2max ~60** (lab CPET, plus Garmin estimate). These are measured and do
   **not** scale with FTP — never recompute a band from a new FTP figure. **FatMax has not
   been retested** and can't be seen in HR and power; don't infer it has moved because VT1 did.
+- **Long rides sit below VT1 by default (27 Nov).** All aerobic prescriptions moved from
+  190–215W to **180–200W**; 200–215W is kept for the last hour of build long rides and event
+  pacing. Rationale: VT1 ≈ 195–210W, and riding the low end of the zone cuts fatigue and
+  recovery cost for the same aerobic stimulus (his own observation from a pro coach's podcast).
 - **Two long-ride bands, because they do different jobs:**
   - **Fat oxidation: 140–170W.** Deliberately below where it feels natural. Rationale is
     FatMax at 125W sitting well below where he trains — but that rationale is an assumption
     until FatMax is retested.
-  - **Aerobic volume and durability: 190–215W.** This is what 11 Nov actually demonstrated.
+  - **Aerobic volume and durability: 180–200W, 200–215W for the last hour.** 11 Nov showed 200W
+    is sustainable cleanly.
     Riding 160W for those hours leaves aerobic stimulus on the table.
 - **Intensity distribution is fine — don't claim otherwise.** A previous note here said more
   hours at the wrong intensity was the recurring failure mode. That was drawn from outdoor
@@ -215,6 +225,48 @@ coming up:
 - The first two days of the off block that follows nights are easy-only — the body is still
   catching up on sleep debt. Encoded in `OFF_A_SESSIONS`, not as a special case in
   `sessionForDate()`.
+- **The plan is one build to a goal event, not repeating rotations.** `eventDate` (setting,
+  default Grafton to Inverell, Sat 13 Mar 2027 — unconfirmed until entries open) drives
+  `phaseForDate()`: base 85+ days out, build 36–84, event-specific 13–35, taper 0–12. Each
+  phase has its own `OFF_A_SESSIONS` / `OFF_B_SESSIONS` arrays; nightshift and dayshift
+  sessions don't change by phase (safety, not periodisation, sets those). The old six
+  16-day rotations from `rosterAnchor` ran out in October and sat on "Peak 6/6" forever.
+  - Hours and TSS targets now come from the day's actual prescription
+    (`parseDurationRangeFromText` midpoint, tier → intensity), not a fixed table, so they
+    follow the build and race weekends. `CAPACITY_BY_BLOCK` is only a fallback.
+  - **13 Mar 2027 falls on the last day of a dayshift block** (Google Calendar: dayshift
+    10–13 Mar; an earlier note here said nightshift). He needs leave for it. Event days and the eve now override
+    the session; 14–20 Mar is a recovery week.
+  - **Second goal event: Go4Bathurst, Sat 17 Apr 2027 (crit, Mount Panorama pit precinct)
+    and Sun 18 Apr (150km road race), setting `event2Date`.** Both days fall on post-dayshift
+    off-block days 3–4, no leave needed. `goalEvents()` lists events in order; the phase counts
+    down to the next one, the 7 days after any event are a `recovery` phase (no club racing,
+    its own OFF_A/OFF_B arrays), and event days plus their eve (openers) override
+    `sessionForDate()`. G2I → Go4Bathurst is 35 days: one recovery week, then specific, then taper.
+    Registration TBC on AusCycling.
+  - **Podiatrist surgery is booked for 26 Feb 2027** (follow-up 1 Mar) — the post-dayshift
+    block that holds the event sim, two weeks out. The plan doesn't know about it.
+  - **No race on post-nights day 1 (cyclePos 4), any phase.** He finishes the fourth
+    nightshift ~6am that morning. `raceFitsBuild()` rejects it; 17 Jan 2027 is the case.
+  - Raceable Sundays to the event (as of 24 Nov): 27 Dec (HEZ + CCCC), 7 Mar (HEZ + CCCC).
+    Everything else is on shift, protected for the build, or post-nightshift.
+  - **He races 27 Dec and 10 Jan (confirmed 27 Nov)** — setting `chosenRaces` (comma-separated dates). A chosen
+    race overrides the build's protected slots but never the safety rules (post-nights day 1,
+    recovery week). 10 Jan costs that block's long ride (becomes openers) and its climb sim.
+    He decides on the day whether 11 Jan stays a recovery spin. 27 Dec fits the build anyway
+    and costs that block's rest day.
+  - **Away without a bike 31 Dec 2026 – 4 Jan 2027** — setting `offBikeDates` (dates or
+    `a..b` ranges). Off-bike days prescribe rest and drop any race on them. 31 Dec is the
+    last rostered nightshift, so he needs leave for it.
+  - **Weekly CCCC racing and the event build compete, and Ryan chose "race when it fits"**
+    (20 Nov 2026). A race weekend uses the race day, the eve (openers) and the day after
+    (recovery). In build and event-specific phases, `raceFitsBuild()` drops any race whose
+    weekend would land on a protected slot — post-nights day 3 (long ride), post-dayshift
+    days 1–2 (long ride, climb/event sim) — and the race calendar shows it as "skip, long
+    ride day". Base and taper race freely. Simulated 20 Nov – 13 Mar (before the post-nightshift rule): weekly racing gave
+    ~9.4 h/week with one climb sim and one event sim; race-when-it-fits gives ~10.6 h/week,
+    two climb sims and two event sims. A race on post-dayshift day 4 replaces that block's
+    rest day (27 Dec 2026 does).
 - **The two off blocks are not interchangeable and have separate session arrays.**
   `OFF_A_SESSIONS` (cyclePos 4–7, post-nights) is aerobic only and carries no quality
   session at all. `OFF_B_SESSIONS` (cyclePos 12–15, post-dayshift) is the freshest point in
@@ -236,11 +288,24 @@ coming up:
 
 ## Racing
 
-- **HEZ** (Newcastle Hunter CC) and **CCCC** (Central Coast CC) both race **fortnightly on
-  Sundays**. Neither is weekly, neither is Saturday.
-- Schedules are generated from an anchor date + 14-day interval (`hezAnchor`, `ccccAnchor` in
-  settings), not a hardcoded list. If a club's races land on the opposite Sunday to what the
-  dashboard shows, shift that anchor by 7 days.
+- **HEZ** (Newcastle Hunter CC) races **fortnightly on Sundays**. **CCCC** (Central Coast CC,
+  Ourimbah) runs its Spring/Summer series **weekly on Sundays** — he raced it on 1, 8, 15
+  and 22 Nov 2026. An earlier note here said both were fortnightly; that hid the 22 Nov race
+  from the dashboard entirely.
+- Schedules are generated from an anchor date + the club's interval (`hezAnchor`,
+  `ccccAnchor` in settings; `HEZ_INTERVAL_DAYS` 14, `CCCC_INTERVAL_DAYS` 7), not a hardcoded
+  list. If HEZ races land on the opposite Sunday to what the dashboard shows, shift that
+  anchor by 7 days.
+- **Race eve gets openers, from any block.** `sessionForDate()` checks whether tomorrow is a
+  raceable Sunday (one `findRaceSundayInBlock()` finds) and prescribes openers — 30–75 min
+  mostly easy with 3 x 1 min at 330–350W. It used to inherit the generic slot (a 2–2.5h Z2
+  ride, or "easy spin or rest" on the last dayshift day), which neither opens the legs nor
+  scores the openers he actually rode. Race day text carries the primer (3 x 2 min, last
+  block ~20 min before the gun) — the protocol is 2 for 2 against one unprimed race.
+- **Prescription wording drives scoring.** `tierForPrescription()` is a substring match:
+  any text containing "race" scores in the hard tier and "threshold" in the threshold tier,
+  even in a phrase like "no threshold work". Write non-race prescriptions with "racing" and
+  avoid naming intensities they're telling him to skip.
 - Entries go through EntryBoss (CCCC) and Buncheur (HEZ).
 
 ## Architecture
@@ -302,10 +367,12 @@ anything the sync writes. Oura rows add `hrv_ms`, `resting_hr` (overnight low, p
 
 ### Readiness score
 
-Weighted from sleep 30%, HRV 20%, resting HR 20%, training load 30%. Components with no data
+Weighted from sleep 35%, HRV 10%, resting HR 20%, training load 35% (HRV cut from 20% on
+24 Nov — it swings 7–33 nightly with the roster and was moving the dial too much). Components with no data
 drop out and their weight is redistributed, so a missing ring loses precision rather than
 quietly scoring a neutral 60. HRV is scored against a rolling 14-night median baseline, not
-an absolute value — below 75% of baseline caps readiness at 45, and under 5h sleep caps it
+an absolute value — **three consecutive nights** below 75% of baseline cap readiness at 45
+(`hrvLowRun()`; a single low night only costs points through the HRV score), and under 5h sleep caps it
 at 50. With no recovery data at all the score is capped at 70, because load alone would
 otherwise read 100.
 
