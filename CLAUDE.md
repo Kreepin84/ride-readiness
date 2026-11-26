@@ -250,13 +250,14 @@ coming up:
     nightshift ~6am that morning. `raceFitsBuild()` rejects it; 17 Jan 2027 is the case.
   - Raceable Sundays to the event (as of 24 Nov): 27 Dec (HEZ + CCCC), 7 Mar (HEZ + CCCC).
     Everything else is on shift, protected for the build, or post-nightshift.
-  - **He races 10 Jan (27 Nov), not 27 Dec** — setting `chosenRaces` (comma-separated
-    dates). A chosen race overrides the build's protected slots but never the safety rules
-    (post-nights day 1, recovery week). 10 Jan costs that block's long ride (becomes openers)
-    and its climb sim. He decides on the day whether 11 Jan stays a recovery spin.
-  - **Away without a bike 26–30 Dec 2026** — setting `offBikeDates` (dates or `a..b`
-    ranges). Off-bike days prescribe rest and drop any race on them. Calendar still shows
-    nightshift 28–31 Dec; unconfirmed whether he has leave. Christmas Day carries the climb sim.
+  - **He races 10 Jan (27 Nov)** — setting `chosenRaces` (comma-separated dates). A chosen
+    race overrides the build's protected slots but never the safety rules (post-nights day 1,
+    recovery week). 10 Jan costs that block's long ride (becomes openers) and its climb sim.
+    He decides on the day whether 11 Jan stays a recovery spin. 27 Dec fits the build by
+    default and is back on the plan; whether he rides it is unconfirmed.
+  - **Away without a bike 31 Dec 2026 – 4 Jan 2027** — setting `offBikeDates` (dates or
+    `a..b` ranges). Off-bike days prescribe rest and drop any race on them. 31 Dec is the
+    last rostered nightshift, so he needs leave for it.
   - **Weekly CCCC racing and the event build compete, and Ryan chose "race when it fits"**
     (20 Nov 2026). A race weekend uses the race day, the eve (openers) and the day after
     (recovery). In build and event-specific phases, `raceFitsBuild()` drops any race whose
