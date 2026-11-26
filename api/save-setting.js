@@ -3,7 +3,7 @@
 
 const ALLOWED_KEYS = [
   'torqueEff', 'ftp', 'vo2max', 'weight', 'rosterAnchor', 'programStart',
-  'hezAnchor', 'ccccAnchor', 'eventDate', 'event2Date', 'chosenRaces',
+  'hezAnchor', 'ccccAnchor', 'eventDate', 'event2Date', 'chosenRaces', 'offBikeDates',
   'hrExcellent', 'hrPoor', 'weeklyLoadTarget', 'weeklyHoursTarget', 'ftpTestDate', 'ftpTestIntervalWeeks',
   'lastUpdated'
 ];
@@ -12,7 +12,7 @@ const ALLOWED_KEYS = [
 // Listing them here (rather than inline in the check) keeps the two lists from drifting apart,
 // which is what silently rejected the race-anchor saves when they were first added.
 const NON_NUMERIC_KEYS = new Set([
-  'rosterAnchor', 'programStart', 'hezAnchor', 'ccccAnchor', 'eventDate', 'event2Date', 'chosenRaces', 'ftpTestDate', 'lastUpdated'
+  'rosterAnchor', 'programStart', 'hezAnchor', 'ccccAnchor', 'eventDate', 'event2Date', 'chosenRaces', 'offBikeDates', 'ftpTestDate', 'lastUpdated'
 ]);
 const DATE_KEYS = new Set([
   'rosterAnchor', 'programStart', 'hezAnchor', 'ccccAnchor', 'eventDate', 'event2Date', 'ftpTestDate'
@@ -83,6 +83,13 @@ export default async function handler(req, res) {
       if (parts.length > 50 || parts.some(d => !/^\d{4}-\d{2}-\d{2}$/.test(d) || Number.isNaN(Date.parse(`${d}T00:00:00`)))) {
         return res.status(400).json({ error: 'chosenRaces must be comma-separated YYYY-MM-DD dates' });
       }
+    }
+    // offBikeDates: comma-separated dates or ranges (YYYY-MM-DD or YYYY-MM-DD..YYYY-MM-DD).
+    if (key === 'offBikeDates') {
+      const D = /^\d{4}-\d{2}-\d{2}$/;
+      const parts = String(value).split(',').map(x => x.trim()).filter(Boolean);
+      const bad = parts.length > 50 || parts.some(p => p.split('..').length > 2 || p.split('..').some(d => !D.test(d) || Number.isNaN(Date.parse(`${d}T00:00:00`))));
+      if (bad) return res.status(400).json({ error: 'offBikeDates must be dates or ranges like 2026-12-26..2026-12-30' });
     }
   }
 
