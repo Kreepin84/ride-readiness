@@ -225,6 +225,7 @@ const DEFAULTS = {
   ccccAnchor: '2026-11-15',
   eventDate: '2027-03-13',
   event2Date: '2027-04-17',
+  chosenRaces: '2026-12-27,2027-01-10',
   hrExcellent: 48,
   hrPoor: 68,
   weeklyLoadTarget: 300,
@@ -563,6 +564,9 @@ function findRaceSundayInBlock(dateObj){
 // In practice that leaves races on day 4 of the post-dayshift block (which costs that
 // block's rest day). Base and taper race freely, except on post-nights day 1 (see below).
 const PROTECTED_RACE_SLOTS = { A:[2], B:[0,1] };
+function chosenRaceSet(){
+  return new Set(String(data.chosenRaces ?? DEFAULTS.chosenRaces).split(',').map(x => x.trim()).filter(Boolean));
+}
 function raceFitsBuild(raceSun){
   const anchor0 = new Date(data.rosterAnchor+'T00:00:00');
   const pos = ((dayDiff(raceSun, anchor0) % 16)+16) % 16;
@@ -573,6 +577,10 @@ function raceFitsBuild(raceSun){
   if(pos === 4) return false;
   // No club racing in the recovery week after a goal event.
   if(phaseForDate(raceSun) === 'recovery') return false;
+  // Races he has chosen to ride (setting chosenRaces) beat the build's protected slots —
+  // but never the safety rules above. 10 Jan 2027 is one: it takes that block's climb sim
+  // (day 2) and turns the day-1 long ride into openers.
+  if(chosenRaceSet().has(localKey(raceSun))) return true;
   const phase = phaseForDate(raceSun);
   if(phase !== 'build' && phase !== 'specific') return true;
   const anchor = new Date(data.rosterAnchor+'T00:00:00');
@@ -1556,6 +1564,7 @@ const FIELD_SETS = {
     {key:'ccccAnchor', label:'A known CCCC race Sunday (YYYY-MM-DD) — weekly from here', val:()=>data.ccccAnchor, type:'text'},
     {key:'eventDate', label:'Goal event date — Grafton to Inverell (YYYY-MM-DD)', val:()=>data.eventDate, type:'text'},
     {key:'event2Date', label:'Second goal event — Go4Bathurst, first day (YYYY-MM-DD)', val:()=>data.event2Date, type:'text'},
+    {key:'chosenRaces', label:'Races I\u2019m riding even in the build (YYYY-MM-DD, comma-separated)', val:()=>data.chosenRaces, type:'text'},
     {key:'hrExcellent', label:'Overnight HR that scores 100 (fully recovered)', val:()=>data.hrExcellent, type:'number'},
     {key:'hrPoor', label:'Overnight HR that scores 0 (poor recovery)', val:()=>data.hrPoor, type:'number'},
     {key:'weeklyLoadTarget', label:'7-day Relative Effort sum = "full tunnel" (100%)', val:()=>data.weeklyLoadTarget, type:'number'},

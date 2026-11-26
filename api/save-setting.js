@@ -3,7 +3,7 @@
 
 const ALLOWED_KEYS = [
   'torqueEff', 'ftp', 'vo2max', 'weight', 'rosterAnchor', 'programStart',
-  'hezAnchor', 'ccccAnchor', 'eventDate', 'event2Date',
+  'hezAnchor', 'ccccAnchor', 'eventDate', 'event2Date', 'chosenRaces',
   'hrExcellent', 'hrPoor', 'weeklyLoadTarget', 'weeklyHoursTarget', 'ftpTestDate', 'ftpTestIntervalWeeks',
   'lastUpdated'
 ];
@@ -12,7 +12,7 @@ const ALLOWED_KEYS = [
 // Listing them here (rather than inline in the check) keeps the two lists from drifting apart,
 // which is what silently rejected the race-anchor saves when they were first added.
 const NON_NUMERIC_KEYS = new Set([
-  'rosterAnchor', 'programStart', 'hezAnchor', 'ccccAnchor', 'eventDate', 'event2Date', 'ftpTestDate', 'lastUpdated'
+  'rosterAnchor', 'programStart', 'hezAnchor', 'ccccAnchor', 'eventDate', 'event2Date', 'chosenRaces', 'ftpTestDate', 'lastUpdated'
 ]);
 const DATE_KEYS = new Set([
   'rosterAnchor', 'programStart', 'hezAnchor', 'ccccAnchor', 'eventDate', 'event2Date', 'ftpTestDate'
@@ -75,6 +75,13 @@ export default async function handler(req, res) {
     if (DATE_KEYS.has(key)) {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value)) || Number.isNaN(Date.parse(`${value}T00:00:00`))) {
         return res.status(400).json({ error: `Expected a date in YYYY-MM-DD format for ${key}` });
+      }
+    }
+    // chosenRaces: comma-separated YYYY-MM-DD list (may be empty).
+    if (key === 'chosenRaces') {
+      const parts = String(value).split(',').map(x => x.trim()).filter(Boolean);
+      if (parts.length > 50 || parts.some(d => !/^\d{4}-\d{2}-\d{2}$/.test(d) || Number.isNaN(Date.parse(`${d}T00:00:00`)))) {
+        return res.status(400).json({ error: 'chosenRaces must be comma-separated YYYY-MM-DD dates' });
       }
     }
   }
